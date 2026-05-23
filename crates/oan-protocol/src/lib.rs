@@ -119,6 +119,8 @@ pub struct DiscoveryResponseProof {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DiscoveryQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
     #[serde(rename = "capabilityTags", default)]
     pub capability_tags: Vec<String>,
     #[serde(rename = "serviceType", skip_serializing_if = "Option::is_none")]
