@@ -6,4 +6,5 @@ Email: jlxufly@gmail.com
 
 # oan-crypto
 
-Ed25519 signatures, SHA-256 hashes, and key encoding helpers.
+Multi-suite cryptographic helpers for OpenAgenet, including legacy
+Ed25519/SHA-256 flows and SM2/SM3 support.

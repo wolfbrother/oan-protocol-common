@@ -6,8 +6,8 @@
 //! Verified package, manifest, and metadata models.
 
 use chrono::{DateTime, Utc};
-use oan_core::DidDocument;
-use oan_crypto::{hash_json, CryptoError};
+use oan_core::{CryptoSuite, DataIntegrityProof, DidDocument};
+use oan_crypto::{hash_json_with_suite, CryptoError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -45,6 +45,12 @@ pub struct RootProof {
     #[serde(rename = "bulletinEventHash")]
     pub bulletin_event_hash: Option<String>,
     pub signature: Option<String>,
+    #[serde(rename = "proof", skip_serializing_if = "Option::is_none")]
+    pub proof: Option<DataIntegrityProof>,
+    #[serde(rename = "cryptoSuite", skip_serializing_if = "Option::is_none")]
+    pub crypto_suite: Option<CryptoSuite>,
+    #[serde(rename = "hashAlgorithm", skip_serializing_if = "Option::is_none")]
+    pub hash_algorithm: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -96,8 +102,21 @@ pub struct Manifest {
 }
 
 impl VerifiedPackage {
+    fn effective_crypto_suite(&self) -> CryptoSuite {
+        self.root_proof
+            .crypto_suite
+            .clone()
+            .or_else(|| {
+                self.root_proof
+                    .proof
+                    .as_ref()
+                    .and_then(|proof| proof.crypto_suite())
+            })
+            .unwrap_or(CryptoSuite::Ed25519Sha256Legacy)
+    }
+
     pub fn verify_document_hash(&self) -> Result<(), PackageError> {
-        let actual_hash = hash_json(&self.did_document)?;
+        let actual_hash = hash_json_with_suite(self.effective_crypto_suite(), &self.did_document)?;
         if actual_hash == self.did_document_hash {
             Ok(())
         } else {
@@ -109,7 +128,7 @@ impl VerifiedPackage {
         let Some(expected_hash) = self.metadata_hash.as_deref() else {
             return Ok(());
         };
-        let actual_hash = hash_json(&self.metadata)?;
+        let actual_hash = hash_json_with_suite(self.effective_crypto_suite(), &self.metadata)?;
         if actual_hash == expected_hash {
             Ok(())
         } else {
@@ -121,7 +140,7 @@ impl VerifiedPackage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oan_core::DidDocument;
+    use oan_core::{DataIntegrityProof, DidDocument, VerificationMethod};
 
     #[test]
     fn detects_hash_mismatch() {
@@ -153,6 +172,9 @@ mod tests {
                 root_did: "did:ans:AGRT:efrootrootrootrootrootroot".to_owned(),
                 bulletin_event_hash: None,
                 signature: None,
+                proof: None,
+                crypto_suite: None,
+                hash_algorithm: None,
             },
             created_at: Utc::now(),
         };
@@ -161,5 +183,124 @@ mod tests {
             package.verify_document_hash(),
             Err(PackageError::DidDocumentHashMismatch)
         ));
+    }
+
+    #[test]
+    fn document_hash_uses_legacy_fallback_for_historical_root_proof() {
+        let did_document = DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            verification_method: vec![VerificationMethod {
+                id: "did:ans:AGDM:efserviceagentservice1234#key-1".to_owned(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+                crypto_suite: None,
+                public_key_format: None,
+                public_key_multibase: Some("zExample".to_owned()),
+                public_key_jwk: None,
+            }],
+            authentication: vec!["did:ans:AGDM:efserviceagentservice1234#key-1".to_owned()],
+            assertion_method: vec!["did:ans:AGDM:efserviceagentservice1234#key-1".to_owned()],
+            service: vec![],
+            ans_metadata: None,
+        };
+        let did_document_hash =
+            oan_crypto::hash_json_with_suite(CryptoSuite::Ed25519Sha256Legacy, &did_document)
+                .unwrap();
+        let metadata = AgentMetadata {
+            did: did_document.id.clone(),
+            role: "Demo Service Agent".to_owned(),
+            identity_type: "demo-service-agent".to_owned(),
+            did_document_hash: did_document_hash.clone(),
+            capability_tags: vec![],
+            services: vec![],
+            status: "active".to_owned(),
+            updated_at: Utc::now(),
+        };
+
+        let package = VerifiedPackage {
+            package_version: "0.1.0".to_owned(),
+            did: did_document.id.clone(),
+            did_document,
+            did_document_hash,
+            metadata_hash: None,
+            metadata,
+            root_proof: RootProof {
+                root_did: "did:ans:AGRT:efrootrootrootrootrootroot".to_owned(),
+                bulletin_event_hash: None,
+                signature: None,
+                proof: Some(DataIntegrityProof {
+                    proof_type: "Ed25519Signature2020".to_owned(),
+                    creator: "did:ans:AGRT:efrootrootrootrootrootroot#key-1".to_owned(),
+                    created: Utc::now(),
+                    proof_purpose: "assertionMethod".to_owned(),
+                    proof_value: "sig".to_owned(),
+                    crypto_suite: None,
+                    hash_algorithm: None,
+                    verification_method: None,
+                }),
+                crypto_suite: None,
+                hash_algorithm: None,
+            },
+            created_at: Utc::now(),
+        };
+
+        package.verify_document_hash().unwrap();
+    }
+
+    #[test]
+    fn document_hash_respects_explicit_modern_suite() {
+        let did_document = DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            verification_method: vec![],
+            authentication: vec![],
+            assertion_method: vec![],
+            service: vec![],
+            ans_metadata: None,
+        };
+        let did_document_hash =
+            oan_crypto::hash_json_with_suite(CryptoSuite::Ed25519Sha256, &did_document).unwrap();
+        let metadata = AgentMetadata {
+            did: did_document.id.clone(),
+            role: "Demo Service Agent".to_owned(),
+            identity_type: "demo-service-agent".to_owned(),
+            did_document_hash: did_document_hash.clone(),
+            capability_tags: vec![],
+            services: vec![],
+            status: "active".to_owned(),
+            updated_at: Utc::now(),
+        };
+
+        let package = VerifiedPackage {
+            package_version: "0.1.0".to_owned(),
+            did: did_document.id.clone(),
+            did_document,
+            did_document_hash,
+            metadata_hash: None,
+            metadata,
+            root_proof: RootProof {
+                root_did: "did:ans:AGRT:efrootrootrootrootrootroot".to_owned(),
+                bulletin_event_hash: None,
+                signature: None,
+                proof: Some(DataIntegrityProof {
+                    proof_type: "Ed25519Signature2020".to_owned(),
+                    creator: "did:ans:AGRT:efrootrootrootrootrootroot#key-1".to_owned(),
+                    created: Utc::now(),
+                    proof_purpose: "assertionMethod".to_owned(),
+                    proof_value: "sig".to_owned(),
+                    crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                    hash_algorithm: Some("SHA-256".to_owned()),
+                    verification_method: Some(
+                        "did:ans:AGRT:efrootrootrootrootrootroot#key-1".to_owned(),
+                    ),
+                }),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                hash_algorithm: Some("SHA-256".to_owned()),
+            },
+            created_at: Utc::now(),
+        };
+
+        package.verify_document_hash().unwrap();
     }
 }

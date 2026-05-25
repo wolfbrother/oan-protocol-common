@@ -5,8 +5,8 @@
 
 //! did:ans parsing, generation, and validation.
 
-use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
+use oan_core::CryptoSuite;
+use oan_crypto::{generate_keypair, CryptoError, KeypairMaterial, VerifyingKey};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
@@ -19,7 +19,7 @@ const SUBJECT_CODE: &str = "AG";
 
 fn did_regex() -> &'static Regex {
     static DID_RE: OnceLock<Regex> = OnceLock::new();
-    DID_RE.get_or_init(|| Regex::new(r"^did:ans:AG[A-Za-z0-9]{2}:[A-Za-z0-9]{22,48}$").unwrap())
+    DID_RE.get_or_init(|| Regex::new(r"^did:ans:AG[A-Za-z0-9]{2}:[A-Za-z0-9]{22,92}$").unwrap())
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -30,10 +30,18 @@ pub enum DidAnsError {
     InvalidPartCount,
     #[error("semantic code must be 4 alphanumeric characters and start with AG")]
     InvalidSemanticCode,
-    #[error("suffix must be 22 to 48 alphanumeric characters")]
+    #[error("suffix must be 22 to 92 alphanumeric characters")]
     InvalidSuffix,
     #[error("invalid did:ans syntax")]
     InvalidSyntax,
+    #[error("crypto error: {0}")]
+    Crypto(String),
+}
+
+impl From<CryptoError> for DidAnsError {
+    fn from(value: CryptoError) -> Self {
+        Self::Crypto(value.to_string())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,7 +72,7 @@ impl DidAns {
         }
 
         let suffix = parts[3];
-        if !(22..=48).contains(&suffix.len())
+        if !(22..=92).contains(&suffix.len())
             || !suffix.chars().all(|ch| ch.is_ascii_alphanumeric())
         {
             return Err(DidAnsError::InvalidSuffix);
@@ -81,16 +89,44 @@ impl DidAns {
         })
     }
 
-    pub fn from_public_key(semantic_code: &str, public_key: &[u8]) -> Result<Self, DidAnsError> {
+    pub fn from_public_key(
+        semantic_code: &str,
+        suite: CryptoSuite,
+        public_key: &[u8],
+    ) -> Result<Self, DidAnsError> {
         validate_semantic_code(semantic_code)?;
-        let suffix = format!("ef{}", bs58::encode(public_key).into_string());
+        let suffix = format!(
+            "{}f{}",
+            suite.did_prefix(),
+            bs58::encode(public_key).into_string()
+        );
         Self::parse(format!("{DID_PREFIX}{semantic_code}:{suffix}"))
     }
 
-    pub fn generate_ed25519(semantic_code: &str) -> Result<(Self, SigningKey), DidAnsError> {
+    pub fn generate(
+        semantic_code: &str,
+        suite: CryptoSuite,
+    ) -> Result<(Self, KeypairMaterial), DidAnsError> {
         validate_semantic_code(semantic_code)?;
-        let signing_key = SigningKey::generate(&mut OsRng);
-        let did = Self::from_public_key(semantic_code, signing_key.verifying_key().as_bytes())?;
+        let keypair = generate_keypair(suite.clone())?;
+        let public_key_bytes = match &keypair.verifying_key {
+            VerifyingKey::Ed25519 { key, .. } => key.as_bytes().to_vec(),
+            VerifyingKey::Sm2 { key, .. } => key.to_sec1_bytes().into_vec(),
+        };
+        let did = Self::from_public_key(semantic_code, suite, &public_key_bytes)?;
+        Ok((did, keypair))
+    }
+
+    pub fn generate_ed25519(
+        semantic_code: &str,
+    ) -> Result<(Self, ed25519_dalek::SigningKey), DidAnsError> {
+        let (did, keypair) = Self::generate(semantic_code, CryptoSuite::Ed25519Sha256Legacy)?;
+        let oan_crypto::SigningKey::Ed25519 {
+            key: signing_key, ..
+        } = keypair.signing_key
+        else {
+            return Err(DidAnsError::Crypto("unexpected_ed25519_keypair".to_owned()));
+        };
         Ok((did, signing_key))
     }
 
@@ -169,5 +205,12 @@ mod tests {
         let (did, _key) = DidAns::generate_ed25519("AGUS").unwrap();
         assert_eq!(did.semantic_code(), "AGUS");
         assert!(did.as_str().starts_with("did:ans:AGUS:ef"));
+    }
+
+    #[test]
+    fn generates_sm2_did() {
+        let (did, _keypair) = DidAns::generate("AGUS", CryptoSuite::Sm2Sm3).unwrap();
+        assert_eq!(did.semantic_code(), "AGUS");
+        assert!(did.as_str().starts_with("did:ans:AGUS:zf"));
     }
 }

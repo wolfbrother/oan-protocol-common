@@ -6,7 +6,7 @@
 //! Protocol models shared across OpenAgenet nodes.
 
 use chrono::{DateTime, Utc};
-use oan_core::DidDocument;
+use oan_core::{DataIntegrityProof, DidDocument};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -105,17 +105,7 @@ pub struct RootAuthorizeRequest {
     pub did_document: DidDocument,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DiscoveryResponseProof {
-    #[serde(rename = "proofType")]
-    pub proof_type: String,
-    pub creator: String,
-    pub created: DateTime<Utc>,
-    #[serde(rename = "proofPurpose")]
-    pub proof_purpose: String,
-    #[serde(rename = "proofValue")]
-    pub proof_value: String,
-}
+pub type DiscoveryResponseProof = DataIntegrityProof;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DiscoveryQuery {

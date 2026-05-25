@@ -187,19 +187,19 @@ In the example above:
 
 The ANS identifier generation logic is defined as follows:
 
-1. Select a cryptographic algorithm, such as SM2, Ed25519, or Secp256k1.
+1. Select a cryptographic suite, such as `Sm2Sm3`, `Ed25519Sha256`, `Ed25519Sha256Legacy`, or another deployment-approved suite.
 2. Generate a public/private key pair.
 3. Encode the public key using Base58, Base32, or another ANS-compatible alphanumeric encoding profile. Any encoding used for the suffix MUST produce only letters and digits so that it conforms to the ABNF defined above.
 4. Concatenate the prefix `did:ans:`, a four-character semantic code such as `AGFI`, and the encoded public key string to form the DID.
 
 <img src="image/generateANS.png" alt="ANS Generation"  />
 
-Cryptographic algorithm prefixes:
+Cryptographic suite prefixes:
 
-| Cryptographic Algorithm | Encoding Prefix |
+| Cryptographic Suite or Family | Encoding Prefix |
 | --- | --- |
-| SM2 | `z` |
-| ED25519 | `e` |
+| SM2 / `Sm2Sm3` | `z` |
+| Ed25519 / `Ed25519Sha256` / `Ed25519Sha256Legacy` | `e` |
 | Secp256k1 | `s` |
 
 Encoding prefixes:
@@ -213,6 +213,17 @@ Encoding prefixes:
 ### 8.4 Identifier Semantics
 
 The `did:ans` identifier is method-specific and globally scoped within the `ans` namespace. The DID itself is immutable. Lifecycle changes affect the DID Document and associated metadata, not the DID string.
+
+### 8.5 Cryptographic Suite Neutrality
+
+This specification is intentionally cryptographic-suite-neutral.
+
+- `did:ans` does not define `Ed25519` as a preferred suite.
+- `did:ans` does not define `SM2` as a preferred suite.
+- deployment profiles MAY adopt one suite or multiple suites simultaneously.
+- new suites SHOULD be introducible at low cost by defining suite metadata, key encoding rules, and proof-verification rules without changing the overall DID method structure.
+
+Accordingly, implementations SHOULD treat cryptographic suite selection as data-driven rather than hard-coded around a single algorithm family.
 
 ## 9. Method-Specific Characteristics
 
@@ -364,11 +375,21 @@ Each attribute object MAY include:
 
 The DID Document SHOULD use DID Core `verificationMethod` rather than the legacy `publicKey` property.
 
+Each `verificationMethod` entry SHOULD be self-describing when represented in ANS deployment profiles. In particular, ANS profiles SHOULD expose:
+
+- `type`
+- `cryptoSuite`
+- `publicKeyFormat`
+- one or more public-key encodings such as `publicKeyMultibase` or `publicKeyJwk`
+
 Supported verification suites MAY include method-specific support for:
 
 - `Ed25519VerificationKey2020`
+- `SM2VerificationKey2020`
 - `EcdsaSecp256k1VerificationKey2019`
-- an implementation-defined SM2 verification suite
+- additional deployment-approved verification suites
+
+When `cryptoSuite` is present, verifiers SHOULD use it as the primary suite selector. When `cryptoSuite` is absent in historical objects, verifiers MAY infer a compatibility suite from `type` for backward compatibility.
 
 At least one verification method referenced from `authentication` or `assertionMethod` SHOULD be present unless the DID is permanently deactivated.
 
@@ -405,6 +426,15 @@ Accordingly, for `did:ans`:
 - and resolver status, processing status, or representation-level diagnostics SHOULD be expressed in DID resolution metadata.
 
 This specification therefore does not require top-level `created`, `updated`, or a top-level `proof` object as universal in-document properties, even though deployments MAY include timestamps or proof material where appropriate.
+
+When proof material is included in ANS deployment profiles, proofs SHOULD be self-describing and SHOULD carry:
+
+- `type`
+- `cryptoSuite`
+- `hashAlgorithm`
+- `verificationMethod`
+
+Historical proof objects that omit `cryptoSuite` MAY still be accepted through compatibility inference from `type`, but new objects SHOULD be explicitly self-describing.
 
 ## 12. State and Control Model
 
@@ -582,13 +612,17 @@ The following example illustrates an agent-centric `did:ans` DID Document.
       "id": "did:ans:AGFI:efnVUgqQFfYeu97ABf6sGm3WFtVXHZB2#key-1",
       "type": "Ed25519VerificationKey2020",
       "controller": "did:ans:AGFI:efnVUgqQFfYeu97ABf6sGm3WFtVXHZB2",
+      "cryptoSuite": "Ed25519Sha256Legacy",
+      "publicKeyFormat": "multibase",
       "publicKeyMultibase": "z6Mkexample"
     },
     {
       "id": "did:ans:AGFI:efnVUgqQFfYeu97ABf6sGm3WFtVXHZB2#recovery-1",
-      "type": "Ed25519VerificationKey2020",
+      "type": "SM2VerificationKey2020",
       "controller": "did:ans:AGFI:efnVUgqQFfYeu97ABf6sGm3WFtVXHZB2",
-      "publicKeyMultibase": "z6Mkrecovery"
+      "cryptoSuite": "Sm2Sm3",
+      "publicKeyFormat": "multibase",
+      "publicKeyMultibase": "zSm2RecoveryExample"
     }
   ],
   "authentication": [
@@ -687,6 +721,8 @@ The following example illustrates an agent-centric `did:ans` DID Document.
   ]
 }
 ```
+
+The example above is intentionally multi-suite. It does not imply that `Ed25519` is preferred over `SM2`, or that `SM2` is preferred over `Ed25519`. ANS deployment profiles may use one suite, multiple suites, or introduce additional suites, as long as each object remains self-describing and verifiable.
 
 ## 16. DID Method Compliance Notes
 

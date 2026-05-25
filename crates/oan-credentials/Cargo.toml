@@ -7,7 +7,6 @@ version.workspace = true
 
 [dependencies]
 chrono.workspace = true
-ed25519-dalek.workspace = true
 oan-core = { path = "../oan-core" }
 oan-crypto = { path = "../oan-crypto" }
 serde.workspace = true

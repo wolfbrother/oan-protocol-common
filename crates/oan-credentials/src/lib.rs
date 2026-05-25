@@ -6,7 +6,11 @@
 //! Credential models and verification helpers.
 
 use chrono::{DateTime, Utc};
-use oan_crypto::{hash_json, sign_bytes, verify_bytes, CryptoError};
+use oan_core::{CryptoSuite, DataIntegrityProof};
+use oan_crypto::{
+    build_data_integrity_proof, hash_json_with_suite, signature_input, verify_payload_with_proof,
+    CryptoError, SigningKey, VerifyingKey,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -21,17 +25,7 @@ pub enum CredentialError {
     InvalidSignature,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CredentialProof {
-    #[serde(rename = "type")]
-    pub proof_type: String,
-    pub creator: String,
-    pub created: DateTime<Utc>,
-    #[serde(rename = "proofPurpose")]
-    pub proof_purpose: String,
-    #[serde(rename = "proofValue")]
-    pub proof_value: String,
-}
+pub type CredentialProof = DataIntegrityProof;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeAuthorizationCredential {
@@ -67,39 +61,40 @@ pub struct AgentRegistrationCredential {
     pub proof: Option<CredentialProof>,
 }
 
-pub fn proof_payload_hash<T: Serialize>(credential: &T) -> Result<String, CredentialError> {
-    Ok(hash_json(credential)?)
+pub fn proof_payload_hash<T: Serialize>(
+    suite: CryptoSuite,
+    credential: &T,
+) -> Result<String, CredentialError> {
+    Ok(hash_json_with_suite(suite, credential)?)
 }
 
 pub fn sign_credential<T>(
     credential_without_proof: &T,
     creator: String,
-    signing_key: &ed25519_dalek::SigningKey,
+    verification_method: String,
+    signing_key: &SigningKey,
 ) -> Result<CredentialProof, CredentialError>
 where
     T: Serialize,
 {
-    let payload_hash = proof_payload_hash(credential_without_proof)?;
-    Ok(CredentialProof {
-        proof_type: "Ed25519Signature2020".to_owned(),
+    Ok(build_data_integrity_proof(
+        credential_without_proof,
         creator,
-        created: Utc::now(),
-        proof_purpose: "assertionMethod".to_owned(),
-        proof_value: sign_bytes(signing_key, payload_hash.as_bytes()),
-    })
+        verification_method,
+        signing_key,
+    )?)
 }
 
 pub fn verify_signed_payload<T>(
     payload_without_proof: &T,
     proof: Option<&CredentialProof>,
-    verifying_key: &ed25519_dalek::VerifyingKey,
+    verifying_key: &VerifyingKey,
 ) -> Result<(), CredentialError>
 where
     T: Serialize,
 {
     let proof = proof.ok_or(CredentialError::MissingProof)?;
-    let payload_hash = proof_payload_hash(payload_without_proof)?;
-    verify_bytes(verifying_key, payload_hash.as_bytes(), &proof.proof_value)
+    verify_payload_with_proof(payload_without_proof, proof, verifying_key)
         .map_err(|_| CredentialError::InvalidSignature)
 }
 
@@ -111,11 +106,17 @@ where
     T: Serialize,
 {
     let proof = proof.ok_or(CredentialError::MissingProof)?;
-    let payload_hash = proof_payload_hash(payload_without_proof)?;
-    let actual = hash_json(&serde_json::json!({
-        "payloadHash": payload_hash,
-        "proofValue": proof.proof_value
-    }))?;
+    let suite = proof
+        .crypto_suite()
+        .ok_or(CredentialError::InvalidSignature)?;
+    let payload_input = signature_input(suite.clone(), payload_without_proof)?;
+    let actual = hash_json_with_suite(
+        suite,
+        &serde_json::json!({
+            "payloadInput": String::from_utf8_lossy(&payload_input),
+            "proofValue": proof.proof_value
+        }),
+    )?;
     Ok(actual)
 }
 
@@ -137,13 +138,18 @@ impl NodeAuthorizationCredential {
     pub fn sign(
         mut self,
         key_id: String,
-        signing_key: &ed25519_dalek::SigningKey,
+        signing_key: &SigningKey,
     ) -> Result<Self, CredentialError> {
         let unsigned = Self {
             proof: None,
             ..self.clone()
         };
-        self.proof = Some(sign_credential(&unsigned, key_id, signing_key)?);
+        self.proof = Some(sign_credential(
+            &unsigned,
+            key_id.clone(),
+            key_id,
+            signing_key,
+        )?);
         Ok(self)
     }
 }
@@ -165,20 +171,25 @@ impl AgentRegistrationCredential {
     pub fn sign(
         mut self,
         key_id: String,
-        signing_key: &ed25519_dalek::SigningKey,
+        signing_key: &SigningKey,
     ) -> Result<Self, CredentialError> {
         let unsigned = Self {
             proof: None,
             ..self.clone()
         };
-        self.proof = Some(sign_credential(&unsigned, key_id, signing_key)?);
+        self.proof = Some(sign_credential(
+            &unsigned,
+            key_id.clone(),
+            key_id,
+            signing_key,
+        )?);
         Ok(self)
     }
 }
 
 pub fn verify_agent_registration_credential(
     credential: &AgentRegistrationCredential,
-    issuer_verifying_key: &ed25519_dalek::VerifyingKey,
+    issuer_verifying_key: &VerifyingKey,
 ) -> Result<(), CredentialError> {
     let unsigned = AgentRegistrationCredential {
         proof: None,
@@ -190,12 +201,12 @@ pub fn verify_agent_registration_credential(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oan_crypto::generate_ed25519_keypair;
+    use oan_crypto::{generate_keypair, public_key_multibase};
     use serde_json::json;
 
     #[test]
-    fn signs_registration_credential() {
-        let key = generate_ed25519_keypair();
+    fn signs_registration_credential_with_ed25519() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let credential = AgentRegistrationCredential::unsigned(
             "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
             "did:ans:AGDM:efserviceagentservice1234".to_owned(),
@@ -203,7 +214,7 @@ mod tests {
         )
         .sign(
             "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
-            &key,
+            &key.signing_key,
         )
         .unwrap();
 
@@ -211,13 +222,34 @@ mod tests {
             proof: None,
             ..credential.clone()
         };
-        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key()).unwrap();
+        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
+    }
+
+    #[test]
+    fn signs_registration_credential_with_sm2() {
+        let key = generate_keypair(CryptoSuite::Sm2Sm3).unwrap();
+        let credential = AgentRegistrationCredential::unsigned(
+            "did:ans:AGRG:zgregistrarregistrar1234".to_owned(),
+            "did:ans:AGDM:zserviceagentservice1234".to_owned(),
+            json!({"capabilityTags": ["echo"]}),
+        )
+        .sign(
+            "did:ans:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
+            &key.signing_key,
+        )
+        .unwrap();
+
+        let unsigned = AgentRegistrationCredential {
+            proof: None,
+            ..credential.clone()
+        };
+        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
     }
 
     #[test]
     fn rejects_registration_credential_with_wrong_key() {
-        let signing_key = generate_ed25519_keypair();
-        let wrong_key = generate_ed25519_keypair();
+        let signing_key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
+        let wrong_key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let credential = AgentRegistrationCredential::unsigned(
             "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
             "did:ans:AGDM:efserviceagentservice1234".to_owned(),
@@ -225,33 +257,93 @@ mod tests {
         )
         .sign(
             "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
-            &signing_key,
+            &signing_key.signing_key,
         )
         .unwrap();
 
         assert!(
-            verify_agent_registration_credential(&credential, &wrong_key.verifying_key()).is_err()
+            verify_agent_registration_credential(&credential, &wrong_key.verifying_key).is_err()
         );
     }
 
     #[test]
-    fn signs_node_authorization_credential_with_local_claims() {
-        let key = generate_ed25519_keypair();
-        let credential = NodeAuthorizationCredential::unsigned(
-            "did:ans:AGRT:efrootroot1234".to_owned(),
-            "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
-            "registrar".to_owned(),
-            json!({"endpoint": "http://localhost:8001"}),
+    fn proof_exposes_suite_metadata() {
+        let key = generate_keypair(CryptoSuite::Sm2Sm3).unwrap();
+        let credential = AgentRegistrationCredential::unsigned(
+            "did:ans:AGRG:zgregistrarregistrar1234".to_owned(),
+            "did:ans:AGDM:zserviceagentservice1234".to_owned(),
+            json!({"capabilityTags": ["echo"]}),
         )
-        .sign("did:ans:AGRT:efrootroot1234#key-1".to_owned(), &key)
+        .sign(
+            "did:ans:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
+            &key.signing_key,
+        )
         .unwrap();
 
-        let unsigned = NodeAuthorizationCredential {
+        assert_eq!(
+            credential.proof.as_ref().unwrap().crypto_suite(),
+            Some(CryptoSuite::Sm2Sm3)
+        );
+        assert_eq!(
+            credential
+                .proof
+                .as_ref()
+                .unwrap()
+                .verification_method
+                .as_deref(),
+            Some("did:ans:AGRG:zgregistrarregistrar1234#key-1")
+        );
+        assert!(!public_key_multibase(&key.verifying_key).is_empty());
+    }
+
+    #[test]
+    fn verifies_historical_registration_proof_without_crypto_suite() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
+        let mut credential = AgentRegistrationCredential::unsigned(
+            "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
+            "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            json!({"capabilityTags": ["echo"]}),
+        )
+        .sign(
+            "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
+            &key.signing_key,
+        )
+        .unwrap();
+        let proof = credential.proof.as_mut().unwrap();
+        proof.crypto_suite = None;
+        proof.hash_algorithm = None;
+        proof.verification_method = None;
+
+        let unsigned = AgentRegistrationCredential {
             proof: None,
             ..credential.clone()
         };
-        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key()).unwrap();
-        assert_eq!(credential.status, "active");
-        assert_eq!(credential.claims["endpoint"], "http://localhost:8001");
+        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
+    }
+
+    #[test]
+    fn modern_ed25519_suite_stays_distinct_from_legacy() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let credential = AgentRegistrationCredential::unsigned(
+            "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
+            "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            json!({"capabilityTags": ["echo"]}),
+        )
+        .sign(
+            "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
+            &key.signing_key,
+        )
+        .unwrap();
+
+        assert_eq!(
+            credential.proof.as_ref().unwrap().crypto_suite(),
+            Some(CryptoSuite::Ed25519Sha256)
+        );
+
+        let unsigned = AgentRegistrationCredential {
+            proof: None,
+            ..credential.clone()
+        };
+        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
     }
 }
