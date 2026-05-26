@@ -1125,6 +1125,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "oan-core",
+ "oan-package",
  "serde",
  "serde_json",
 ]
