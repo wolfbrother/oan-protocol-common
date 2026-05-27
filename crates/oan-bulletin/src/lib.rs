@@ -44,9 +44,6 @@ pub enum BulletinEventType {
     DiscoveryNodeDomainsUpdated,
     DiscoveryNodeRevoked,
     NodeRevoked,
-    AgentDidDocumentAnchored,
-    AgentDidDocumentUpdated,
-    AgentRevoked,
     CapabilityTagTreeUpdated,
 }
 

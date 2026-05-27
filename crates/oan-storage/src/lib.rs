@@ -9,6 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -68,9 +69,16 @@ impl SqliteJsonStore {
         if let Some(parent) = config.path().parent() {
             fs::create_dir_all(parent)?;
         }
-        let options =
-            sqlx::sqlite::SqliteConnectOptions::from_str(config.url())?.create_if_missing(true);
-        let pool = sqlx::SqlitePool::connect_with(options).await?;
+        let options = sqlx::sqlite::SqliteConnectOptions::from_str(config.url())?
+            .create_if_missing(true)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+            .busy_timeout(Duration::from_secs(30));
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .acquire_timeout(Duration::from_secs(30))
+            .connect_with(options)
+            .await?;
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS json_records (
