@@ -6,6 +6,7 @@
 //! Storage helpers for local OpenAgenet nodes.
 
 use serde::{de::DeserializeOwned, Serialize};
+use sqlx::{Executor, SqlitePool};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -60,7 +61,14 @@ impl SqliteDatabaseConfig {
 
 #[derive(Clone, Debug)]
 pub struct SqliteJsonStore {
-    pool: sqlx::SqlitePool,
+    pool: SqlitePool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeasedJob<T> {
+    pub job_key: String,
+    pub payload: T,
+    pub attempt_count: i64,
 }
 
 impl SqliteJsonStore {
@@ -75,7 +83,7 @@ impl SqliteJsonStore {
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
             .busy_timeout(Duration::from_secs(30));
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
+            .max_connections(32)
             .acquire_timeout(Duration::from_secs(30))
             .connect_with(options)
             .await?;
@@ -93,6 +101,218 @@ impl SqliteJsonStore {
         .execute(&pool)
         .await?;
         Ok(Self { pool })
+    }
+
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    pub async fn execute_batch(&self, sql: &str) -> Result<(), StorageError> {
+        self.pool.execute(sql).await?;
+        Ok(())
+    }
+
+    pub async fn ensure_leased_job_table(&self, table: &str) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {table} (
+                job_key TEXT NOT NULL PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                lease_owner TEXT,
+                lease_expires_at TEXT,
+                next_attempt_at TEXT NOT NULL,
+                last_error TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            "#
+        );
+        self.pool.execute(sql.as_str()).await?;
+        Ok(())
+    }
+
+    pub async fn enqueue_leased_job<T: Serialize>(
+        &self,
+        table: &str,
+        job_key: &str,
+        value: &T,
+        next_attempt_at: &str,
+    ) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let value_json = serde_json::to_string(value)?;
+        let sql = format!(
+            r#"
+            INSERT INTO {table}(job_key, payload_json, status, attempt_count, lease_owner, lease_expires_at, next_attempt_at, last_error)
+            VALUES (?, ?, 'ready', 0, NULL, NULL, ?, NULL)
+            ON CONFLICT(job_key)
+            DO UPDATE SET
+                payload_json = excluded.payload_json,
+                status = 'ready',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_attempt_at = excluded.next_attempt_at,
+                last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            "#
+        );
+        sqlx::query(sql.as_str())
+            .bind(job_key)
+            .bind(value_json)
+            .bind(next_attempt_at)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn lease_ready_jobs<T: DeserializeOwned>(
+        &self,
+        table: &str,
+        worker_id: &str,
+        limit: i64,
+        now: &str,
+        lease_expires_at: &str,
+    ) -> Result<Vec<LeasedJob<T>>, StorageError> {
+        let table = validated_identifier(table)?;
+        let select_sql = format!(
+            r#"
+            SELECT job_key, payload_json, attempt_count
+            FROM {table}
+            WHERE
+                (
+                    status = 'ready'
+                    OR (status = 'retry-wait' AND next_attempt_at <= ?)
+                    OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?)
+                )
+            ORDER BY next_attempt_at, created_at, job_key
+            LIMIT ?
+            "#
+        );
+        let update_sql = format!(
+            r#"
+            UPDATE {table}
+            SET
+                status = 'leased',
+                lease_owner = ?,
+                lease_expires_at = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE
+                job_key = ?
+                AND (
+                    status = 'ready'
+                    OR (status = 'retry-wait' AND next_attempt_at <= ?)
+                    OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?)
+                )
+            "#
+        );
+
+        let mut tx = self.pool.begin().await?;
+        let selected = sqlx::query_as::<_, (String, String, i64)>(select_sql.as_str())
+            .bind(now)
+            .bind(now)
+            .bind(limit)
+            .fetch_all(&mut *tx)
+            .await?;
+        let mut leased = Vec::new();
+        for (job_key, payload_json, attempt_count) in selected {
+            let result = sqlx::query(update_sql.as_str())
+                .bind(worker_id)
+                .bind(lease_expires_at)
+                .bind(&job_key)
+                .bind(now)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+            if result.rows_affected() == 0 {
+                continue;
+            }
+            leased.push(LeasedJob {
+                job_key,
+                payload: serde_json::from_str(&payload_json)?,
+                attempt_count,
+            });
+        }
+        tx.commit().await?;
+        Ok(leased)
+    }
+
+    pub async fn mark_leased_job_succeeded(
+        &self,
+        table: &str,
+        job_key: &str,
+    ) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            UPDATE {table}
+            SET
+                status = 'succeeded',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE job_key = ?
+            "#
+        );
+        sqlx::query(sql.as_str())
+            .bind(job_key)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn mark_leased_job_retry(
+        &self,
+        table: &str,
+        job_key: &str,
+        next_attempt_at: &str,
+        last_error: Option<&str>,
+    ) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            UPDATE {table}
+            SET
+                status = 'retry-wait',
+                attempt_count = attempt_count + 1,
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_attempt_at = ?,
+                last_error = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE job_key = ?
+            "#
+        );
+        sqlx::query(sql.as_str())
+            .bind(next_attempt_at)
+            .bind(last_error)
+            .bind(job_key)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn read_active_leased_jobs<T: DeserializeOwned>(
+        &self,
+        table: &str,
+    ) -> Result<Vec<T>, StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            SELECT payload_json
+            FROM {table}
+            WHERE status IN ('ready', 'leased', 'retry-wait')
+            ORDER BY updated_at, job_key
+            "#
+        );
+        let rows = sqlx::query_as::<_, (String,)>(sql.as_str())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|(value_json,)| serde_json::from_str(&value_json).map_err(StorageError::from))
+            .collect()
     }
 
     pub async fn upsert_json<T: Serialize>(
@@ -174,6 +394,17 @@ impl SqliteJsonStore {
             .await?;
         Ok(())
     }
+}
+
+fn validated_identifier(value: &str) -> Result<&str, StorageError> {
+    if value.is_empty()
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return Err(StorageError::UnsupportedDatabaseUrl);
+    }
+    Ok(value)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -529,5 +760,70 @@ mod tests {
         assert!(rows.is_empty());
         store.delete_namespace("other").await.unwrap();
         assert_eq!(store.count_namespace("other").await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn leased_job_table_claims_retries_and_lists_active_jobs() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("sqlite:{}", dir.path().join("leased.db").display());
+        let store = SqliteJsonStore::connect(&url).await.unwrap();
+        store.ensure_leased_job_table("root_jobs").await.unwrap();
+        store
+            .enqueue_leased_job(
+                "root_jobs",
+                "job-1",
+                &Example {
+                    value: "payload".to_owned(),
+                },
+                "2026-05-29T00:00:00Z",
+            )
+            .await
+            .unwrap();
+
+        let leased: Vec<LeasedJob<Example>> = store
+            .lease_ready_jobs(
+                "root_jobs",
+                "worker-a",
+                10,
+                "2026-05-29T00:00:01Z",
+                "2026-05-29T00:05:01Z",
+            )
+            .await
+            .unwrap();
+        assert_eq!(leased.len(), 1);
+        assert_eq!(leased[0].job_key, "job-1");
+        assert_eq!(leased[0].payload.value, "payload");
+
+        let active: Vec<Example> = store.read_active_leased_jobs("root_jobs").await.unwrap();
+        assert_eq!(active.len(), 1);
+
+        store
+            .mark_leased_job_retry(
+                "root_jobs",
+                "job-1",
+                "2026-05-29T00:10:01Z",
+                Some("network"),
+            )
+            .await
+            .unwrap();
+        let leased_again: Vec<LeasedJob<Example>> = store
+            .lease_ready_jobs(
+                "root_jobs",
+                "worker-b",
+                10,
+                "2026-05-29T00:10:02Z",
+                "2026-05-29T00:15:02Z",
+            )
+            .await
+            .unwrap();
+        assert_eq!(leased_again.len(), 1);
+        assert_eq!(leased_again[0].attempt_count, 1);
+
+        store
+            .mark_leased_job_succeeded("root_jobs", "job-1")
+            .await
+            .unwrap();
+        let active: Vec<Example> = store.read_active_leased_jobs("root_jobs").await.unwrap();
+        assert!(active.is_empty());
     }
 }
