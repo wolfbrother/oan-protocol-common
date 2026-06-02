@@ -6,7 +6,8 @@
 //! Storage helpers for local OpenAgenet nodes.
 
 use serde::{de::DeserializeOwned, Serialize};
-use sqlx::{Executor, SqlitePool};
+use sqlx::{Executor, Pool, Postgres, Sqlite};
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -19,49 +20,80 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("sqlite error: {0}")]
-    Sqlite(#[from] sqlx::Error),
-    #[error("database url must use sqlite: scheme")]
+    #[error("sql error: {0}")]
+    Sql(#[from] sqlx::Error),
+    #[error("unsupported database url scheme")]
     UnsupportedDatabaseUrl,
     #[error("database path is empty")]
     EmptyDatabasePath,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SqliteDatabaseConfig {
-    url: String,
-    path: PathBuf,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DatabaseBackend {
+    Sqlite,
+    Postgres,
 }
 
-impl SqliteDatabaseConfig {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DatabaseConfig {
+    backend: DatabaseBackend,
+    url: String,
+    path: Option<PathBuf>,
+}
+
+impl DatabaseConfig {
     pub fn parse(url: impl Into<String>) -> Result<Self, StorageError> {
         let url = url.into();
-        let raw_path = url
+        if let Some(raw_path) = url
             .strip_prefix("sqlite://")
             .or_else(|| url.strip_prefix("sqlite:"))
-            .ok_or(StorageError::UnsupportedDatabaseUrl)?;
-        if raw_path.is_empty() {
-            return Err(StorageError::EmptyDatabasePath);
+        {
+            if raw_path.is_empty() {
+                return Err(StorageError::EmptyDatabasePath);
+            }
+            return Ok(Self {
+                backend: DatabaseBackend::Sqlite,
+                path: Some(PathBuf::from(raw_path)),
+                url,
+            });
         }
+        if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+            return Ok(Self {
+                backend: DatabaseBackend::Postgres,
+                path: None,
+                url,
+            });
+        }
+        Err(StorageError::UnsupportedDatabaseUrl)
+    }
 
-        Ok(Self {
-            path: PathBuf::from(raw_path),
-            url,
-        })
+    pub fn backend(&self) -> DatabaseBackend {
+        self.backend
     }
 
     pub fn url(&self) -> &str {
         &self.url
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct SqliteJsonStore {
-    pool: SqlitePool,
+    pool: Pool<Sqlite>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PostgresJsonStore {
+    pool: Pool<Postgres>,
+}
+
+#[derive(Clone, Debug)]
+pub enum DatabaseStore {
+    Sqlite(SqliteJsonStore),
+    Postgres(PostgresJsonStore),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,8 +105,12 @@ pub struct LeasedJob<T> {
 
 impl SqliteJsonStore {
     pub async fn connect(url: &str) -> Result<Self, StorageError> {
-        let config = SqliteDatabaseConfig::parse(url)?;
-        if let Some(parent) = config.path().parent() {
+        let config = DatabaseConfig::parse(url)?;
+        if config.backend() != DatabaseBackend::Sqlite {
+            return Err(StorageError::UnsupportedDatabaseUrl);
+        }
+        let path = config.path().ok_or(StorageError::EmptyDatabasePath)?;
+        if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         let options = sqlx::sqlite::SqliteConnectOptions::from_str(config.url())?
@@ -82,28 +118,17 @@ impl SqliteJsonStore {
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
             .busy_timeout(Duration::from_secs(30));
+        let max_connections = configured_pool_max_connections("OAN_SQLITE_MAX_CONNECTIONS", 32);
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(32)
+            .max_connections(max_connections)
             .acquire_timeout(Duration::from_secs(30))
             .connect_with(options)
             .await?;
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS json_records (
-                namespace TEXT NOT NULL,
-                record_key TEXT NOT NULL,
-                value_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY(namespace, record_key)
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await?;
+        ensure_json_records_sqlite(&pool).await?;
         Ok(Self { pool })
     }
 
-    pub fn pool(&self) -> &SqlitePool {
+    pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
     }
 
@@ -394,6 +419,365 @@ impl SqliteJsonStore {
             .await?;
         Ok(())
     }
+}
+
+impl PostgresJsonStore {
+    pub async fn connect(url: &str) -> Result<Self, StorageError> {
+        let config = DatabaseConfig::parse(url)?;
+        if config.backend() != DatabaseBackend::Postgres {
+            return Err(StorageError::UnsupportedDatabaseUrl);
+        }
+        let max_connections = configured_pool_max_connections("OAN_POSTGRES_MAX_CONNECTIONS", 32);
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(max_connections)
+            .acquire_timeout(Duration::from_secs(30))
+            .connect(config.url())
+            .await?;
+        ensure_json_records_postgres(&pool).await?;
+        Ok(Self { pool })
+    }
+
+    pub fn pool(&self) -> &Pool<Postgres> {
+        &self.pool
+    }
+
+    pub async fn execute_batch(&self, sql: &str) -> Result<(), StorageError> {
+        self.pool.execute(sql).await?;
+        Ok(())
+    }
+
+    pub async fn ensure_leased_job_table(&self, table: &str) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {table} (
+                job_key TEXT NOT NULL PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                attempt_count BIGINT NOT NULL DEFAULT 0,
+                lease_owner TEXT,
+                lease_expires_at TIMESTAMPTZ,
+                next_attempt_at TIMESTAMPTZ NOT NULL,
+                last_error TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_{table}_status_schedule
+            ON {table}(status, next_attempt_at, lease_expires_at, job_key);
+            "#
+        );
+        self.pool.execute(sql.as_str()).await?;
+        Ok(())
+    }
+
+    pub async fn enqueue_leased_job<T: Serialize>(
+        &self,
+        table: &str,
+        job_key: &str,
+        value: &T,
+        next_attempt_at: &str,
+    ) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let value_json = serde_json::to_string(value)?;
+        let sql = format!(
+            r#"
+            INSERT INTO {table}(job_key, payload_json, status, attempt_count, lease_owner, lease_expires_at, next_attempt_at, last_error)
+            VALUES ($1, $2, 'ready', 0, NULL, NULL, $3::timestamptz, NULL)
+            ON CONFLICT(job_key)
+            DO UPDATE SET
+                payload_json = excluded.payload_json,
+                status = 'ready',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_attempt_at = excluded.next_attempt_at,
+                last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            "#
+        );
+        sqlx::query(sql.as_str())
+            .bind(job_key)
+            .bind(value_json)
+            .bind(next_attempt_at)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn lease_ready_jobs<T: DeserializeOwned>(
+        &self,
+        table: &str,
+        worker_id: &str,
+        limit: i64,
+        now: &str,
+        lease_expires_at: &str,
+    ) -> Result<Vec<LeasedJob<T>>, StorageError> {
+        let table = validated_identifier(table)?;
+        let select_sql = format!(
+            r#"
+            SELECT job_key, payload_json, attempt_count
+            FROM {table}
+            WHERE
+                (
+                    status = 'ready'
+                    OR (status = 'retry-wait' AND next_attempt_at <= $1::timestamptz)
+                    OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= $1::timestamptz)
+                )
+            ORDER BY next_attempt_at, created_at, job_key
+            LIMIT $2
+            FOR UPDATE SKIP LOCKED
+            "#
+        );
+        let update_sql = format!(
+            r#"
+            UPDATE {table}
+            SET
+                status = 'leased',
+                lease_owner = $1,
+                lease_expires_at = $2::timestamptz,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE job_key = $3
+            "#
+        );
+
+        let mut tx = self.pool.begin().await?;
+        let selected = sqlx::query_as::<_, (String, String, i64)>(select_sql.as_str())
+            .bind(now)
+            .bind(limit)
+            .fetch_all(&mut *tx)
+            .await?;
+        let mut leased = Vec::new();
+        for (job_key, payload_json, attempt_count) in selected {
+            sqlx::query(update_sql.as_str())
+                .bind(worker_id)
+                .bind(lease_expires_at)
+                .bind(&job_key)
+                .execute(&mut *tx)
+                .await?;
+            leased.push(LeasedJob {
+                job_key,
+                payload: serde_json::from_str(&payload_json)?,
+                attempt_count,
+            });
+        }
+        tx.commit().await?;
+        Ok(leased)
+    }
+
+    pub async fn mark_leased_job_succeeded(
+        &self,
+        table: &str,
+        job_key: &str,
+    ) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            UPDATE {table}
+            SET
+                status = 'succeeded',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE job_key = $1
+            "#
+        );
+        sqlx::query(sql.as_str())
+            .bind(job_key)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn mark_leased_job_retry(
+        &self,
+        table: &str,
+        job_key: &str,
+        next_attempt_at: &str,
+        last_error: Option<&str>,
+    ) -> Result<(), StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            UPDATE {table}
+            SET
+                status = 'retry-wait',
+                attempt_count = attempt_count + 1,
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_attempt_at = $1::timestamptz,
+                last_error = $2,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE job_key = $3
+            "#
+        );
+        sqlx::query(sql.as_str())
+            .bind(next_attempt_at)
+            .bind(last_error)
+            .bind(job_key)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn read_active_leased_jobs<T: DeserializeOwned>(
+        &self,
+        table: &str,
+    ) -> Result<Vec<T>, StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            SELECT payload_json
+            FROM {table}
+            WHERE status IN ('ready', 'leased', 'retry-wait')
+            ORDER BY updated_at, job_key
+            "#
+        );
+        let rows = sqlx::query_as::<_, (String,)>(sql.as_str())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|(value_json,)| serde_json::from_str(&value_json).map_err(StorageError::from))
+            .collect()
+    }
+
+    pub async fn upsert_json<T: Serialize>(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: &T,
+    ) -> Result<(), StorageError> {
+        let value_json = serde_json::to_string(value)?;
+        sqlx::query(
+            r#"
+            INSERT INTO json_records(namespace, record_key, value_json)
+            VALUES ($1, $2, $3)
+            ON CONFLICT(namespace, record_key)
+            DO UPDATE SET value_json = excluded.value_json, updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(namespace)
+        .bind(key)
+        .bind(value_json)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn read_namespace<T: DeserializeOwned>(
+        &self,
+        namespace: &str,
+    ) -> Result<Vec<T>, StorageError> {
+        let rows = sqlx::query_as::<_, (String,)>(
+            "SELECT value_json FROM json_records WHERE namespace = $1 ORDER BY updated_at, record_key",
+        )
+        .bind(namespace)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|(value_json,)| serde_json::from_str(&value_json).map_err(StorageError::from))
+            .collect()
+    }
+
+    pub async fn read_json<T: DeserializeOwned>(
+        &self,
+        namespace: &str,
+        key: &str,
+    ) -> Result<Option<T>, StorageError> {
+        let row = sqlx::query_as::<_, (String,)>(
+            "SELECT value_json FROM json_records WHERE namespace = $1 AND record_key = $2",
+        )
+        .bind(namespace)
+        .bind(key)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|(value_json,)| serde_json::from_str(&value_json).map_err(StorageError::from))
+            .transpose()
+    }
+
+    pub async fn delete_json(&self, namespace: &str, key: &str) -> Result<(), StorageError> {
+        sqlx::query("DELETE FROM json_records WHERE namespace = $1 AND record_key = $2")
+            .bind(namespace)
+            .bind(key)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn count_namespace(&self, namespace: &str) -> Result<i64, StorageError> {
+        let (count,) =
+            sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM json_records WHERE namespace = $1")
+                .bind(namespace)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(count)
+    }
+
+    pub async fn delete_namespace(&self, namespace: &str) -> Result<(), StorageError> {
+        sqlx::query("DELETE FROM json_records WHERE namespace = $1")
+            .bind(namespace)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+fn configured_pool_max_connections(env_key: &str, default: u32) -> u32 {
+    env::var(env_key)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+impl DatabaseStore {
+    pub async fn connect(url: &str) -> Result<Self, StorageError> {
+        let config = DatabaseConfig::parse(url)?;
+        match config.backend() {
+            DatabaseBackend::Sqlite => Ok(Self::Sqlite(SqliteJsonStore::connect(url).await?)),
+            DatabaseBackend::Postgres => Ok(Self::Postgres(PostgresJsonStore::connect(url).await?)),
+        }
+    }
+
+    pub fn backend(&self) -> DatabaseBackend {
+        match self {
+            Self::Sqlite(_) => DatabaseBackend::Sqlite,
+            Self::Postgres(_) => DatabaseBackend::Postgres,
+        }
+    }
+}
+
+async fn ensure_json_records_sqlite(pool: &Pool<Sqlite>) -> Result<(), StorageError> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS json_records (
+            namespace TEXT NOT NULL,
+            record_key TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(namespace, record_key)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn ensure_json_records_postgres(pool: &Pool<Postgres>) -> Result<(), StorageError> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS json_records (
+            namespace TEXT NOT NULL,
+            record_key TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(namespace, record_key)
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 fn validated_identifier(value: &str) -> Result<&str, StorageError> {
@@ -694,17 +1078,16 @@ mod tests {
     }
 
     #[test]
-    fn parses_sqlite_database_url() {
-        let config = SqliteDatabaseConfig::parse("sqlite:./data/root/root.db").unwrap();
+    fn parses_database_urls() {
+        let sqlite = DatabaseConfig::parse("sqlite:./data/root/root.db").unwrap();
+        assert_eq!(sqlite.backend(), DatabaseBackend::Sqlite);
+        assert_eq!(sqlite.url(), "sqlite:./data/root/root.db");
+        assert_eq!(sqlite.path(), Some(Path::new("./data/root/root.db")));
 
-        assert_eq!(config.url(), "sqlite:./data/root/root.db");
-        assert_eq!(config.path(), Path::new("./data/root/root.db"));
-        assert_eq!(
-            SqliteDatabaseConfig::parse("postgres://localhost/oan")
-                .unwrap_err()
-                .to_string(),
-            "database url must use sqlite: scheme"
-        );
+        let postgres = DatabaseConfig::parse("postgres://localhost/oan").unwrap();
+        assert_eq!(postgres.backend(), DatabaseBackend::Postgres);
+        assert_eq!(postgres.url(), "postgres://localhost/oan");
+        assert_eq!(postgres.path(), None);
     }
 
     #[tokio::test]
