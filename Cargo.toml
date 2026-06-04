@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/oan-core",
-    "crates/oan-did-ans",
+    "crates/oan-did-oan",
     "crates/oan-crypto",
     "crates/oan-credentials",
     "crates/oan-bulletin",

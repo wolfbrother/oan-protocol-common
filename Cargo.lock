@@ -1162,15 +1162,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "oan-did-ans"
+name = "oan-did-oan"
 version = "0.1.0"
 dependencies = [
  "bs58",
- "ed25519-dalek",
- "oan-core",
- "oan-crypto",
+ "rand 0.8.6",
  "regex",
  "serde",
+ "sha2",
  "thiserror",
 ]
 
@@ -1192,6 +1191,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "oan-core",
+ "oan-did-oan",
  "oan-package",
  "serde",
  "serde_json",

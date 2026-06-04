@@ -1,5 +1,5 @@
 [package]
-name = "oan-did-ans"
+name = "oan-did-oan"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -7,9 +7,8 @@ version.workspace = true
 
 [dependencies]
 bs58.workspace = true
-ed25519-dalek.workspace = true
-oan-core = { path = "../oan-core" }
-oan-crypto = { path = "../oan-crypto" }
+rand.workspace = true
 regex.workspace = true
 serde.workspace = true
+sha2.workspace = true
 thiserror.workspace = true

@@ -205,8 +205,8 @@ mod tests {
             sequence: 1,
             previous_hash: None,
             event_type: BulletinEventType::RootInitialized,
-            subject_did: "did:ans:AGRT:efrootrootrootrootrootroot".to_owned(),
-            actor_did: "did:ans:AGRT:efrootrootrootrootrootroot".to_owned(),
+            subject_did: "did:oan:AGRT:efrootrootrootrootrootroot".to_owned(),
+            actor_did: "did:oan:AGRT:efrootrootrootrootrootroot".to_owned(),
             payload: json!({"ok": true}),
             created_at: Utc::now(),
         }
@@ -230,8 +230,8 @@ mod tests {
             sequence: 1,
             previous_hash: None,
             event_type: BulletinEventType::RootInitialized,
-            subject_did: "did:ans:AGRT:zfrootrootrootrootrootroot".to_owned(),
-            actor_did: "did:ans:AGRT:zfrootrootrootrootrootroot".to_owned(),
+            subject_did: "did:oan:AGRT:zfrootrootrootrootrootroot".to_owned(),
+            actor_did: "did:oan:AGRT:zfrootrootrootrootrootroot".to_owned(),
             payload: json!({"ok": true}),
             created_at: Utc::now(),
         }
@@ -255,8 +255,8 @@ mod tests {
             sequence: 1,
             previous_hash: None,
             event_type: BulletinEventType::RootInitialized,
-            subject_did: "did:ans:AGRT:efrootrootrootrootrootroot".to_owned(),
-            actor_did: "did:ans:AGRT:efrootrootrootrootrootroot".to_owned(),
+            subject_did: "did:oan:AGRT:efrootrootrootrootrootroot".to_owned(),
+            actor_did: "did:oan:AGRT:efrootrootrootrootrootroot".to_owned(),
             payload: json!({"ok": true}),
             created_at: Utc::now(),
         }

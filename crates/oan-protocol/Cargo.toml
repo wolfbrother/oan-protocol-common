@@ -8,6 +8,7 @@ version.workspace = true
 [dependencies]
 chrono.workspace = true
 oan-core = { path = "../oan-core" }
+oan-did-oan = { path = "../oan-did-oan" }
 oan-package = { path = "../oan-package" }
 serde.workspace = true
 serde_json.workspace = true

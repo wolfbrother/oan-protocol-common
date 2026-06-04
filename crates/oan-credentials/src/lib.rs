@@ -208,12 +208,12 @@ mod tests {
     fn signs_registration_credential_with_ed25519() {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let credential = AgentRegistrationCredential::unsigned(
-            "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
+            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
             json!({"capabilityTags": ["echo"]}),
         )
         .sign(
-            "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
             &key.signing_key,
         )
         .unwrap();
@@ -229,12 +229,12 @@ mod tests {
     fn signs_registration_credential_with_sm2() {
         let key = generate_keypair(CryptoSuite::Sm2Sm3).unwrap();
         let credential = AgentRegistrationCredential::unsigned(
-            "did:ans:AGRG:zgregistrarregistrar1234".to_owned(),
-            "did:ans:AGDM:zserviceagentservice1234".to_owned(),
+            "did:oan:AGRG:zgregistrarregistrar1234".to_owned(),
+            "did:oan:AGDM:zserviceagentservice1234".to_owned(),
             json!({"capabilityTags": ["echo"]}),
         )
         .sign(
-            "did:ans:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
+            "did:oan:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
             &key.signing_key,
         )
         .unwrap();
@@ -251,12 +251,12 @@ mod tests {
         let signing_key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let wrong_key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let credential = AgentRegistrationCredential::unsigned(
-            "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
+            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
             json!({"capabilityTags": ["echo"]}),
         )
         .sign(
-            "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
             &signing_key.signing_key,
         )
         .unwrap();
@@ -270,12 +270,12 @@ mod tests {
     fn proof_exposes_suite_metadata() {
         let key = generate_keypair(CryptoSuite::Sm2Sm3).unwrap();
         let credential = AgentRegistrationCredential::unsigned(
-            "did:ans:AGRG:zgregistrarregistrar1234".to_owned(),
-            "did:ans:AGDM:zserviceagentservice1234".to_owned(),
+            "did:oan:AGRG:zgregistrarregistrar1234".to_owned(),
+            "did:oan:AGDM:zserviceagentservice1234".to_owned(),
             json!({"capabilityTags": ["echo"]}),
         )
         .sign(
-            "did:ans:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
+            "did:oan:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
             &key.signing_key,
         )
         .unwrap();
@@ -291,7 +291,7 @@ mod tests {
                 .unwrap()
                 .verification_method
                 .as_deref(),
-            Some("did:ans:AGRG:zgregistrarregistrar1234#key-1")
+            Some("did:oan:AGRG:zgregistrarregistrar1234#key-1")
         );
         assert!(!public_key_multibase(&key.verifying_key).is_empty());
     }
@@ -300,12 +300,12 @@ mod tests {
     fn verifies_historical_registration_proof_without_crypto_suite() {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let mut credential = AgentRegistrationCredential::unsigned(
-            "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
+            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
             json!({"capabilityTags": ["echo"]}),
         )
         .sign(
-            "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
             &key.signing_key,
         )
         .unwrap();
@@ -325,12 +325,12 @@ mod tests {
     fn modern_ed25519_suite_stays_distinct_from_legacy() {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
         let credential = AgentRegistrationCredential::unsigned(
-            "did:ans:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:ans:AGDM:efserviceagentservice1234".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
+            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
             json!({"capabilityTags": ["echo"]}),
         )
         .sign(
-            "did:ans:AGRG:efregistrarregistrar1234#key-1".to_owned(),
+            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
             &key.signing_key,
         )
         .unwrap();

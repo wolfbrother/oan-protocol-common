@@ -8,5 +8,5 @@ Email: jlxufly@gmail.com
 
 Shared Rust libraries for OAN infrastructure.
 
-These crates hold the trusted core: did:ans utilities, cryptography, credentials, bulletin events, verified packages, storage, protocol models, and service clients.
+These crates hold the trusted core: did:oan utilities, cryptography, credentials, bulletin events, resource packages, storage, protocol models, and service clients.
 

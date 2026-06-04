@@ -340,6 +340,33 @@ impl SqliteJsonStore {
             .collect()
     }
 
+    pub async fn read_ready_leased_jobs<T: DeserializeOwned>(
+        &self,
+        table: &str,
+        now: &str,
+    ) -> Result<Vec<T>, StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            SELECT payload_json
+            FROM {table}
+            WHERE
+                status = 'ready'
+                OR (status = 'retry-wait' AND next_attempt_at <= ?)
+                OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?)
+            ORDER BY next_attempt_at, created_at, job_key
+            "#
+        );
+        let rows = sqlx::query_as::<_, (String,)>(sql.as_str())
+            .bind(now)
+            .bind(now)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|(value_json,)| serde_json::from_str(&value_json).map_err(StorageError::from))
+            .collect()
+    }
+
     pub async fn upsert_json<T: Serialize>(
         &self,
         namespace: &str,
@@ -640,6 +667,32 @@ impl PostgresJsonStore {
             .collect()
     }
 
+    pub async fn read_ready_leased_jobs<T: DeserializeOwned>(
+        &self,
+        table: &str,
+        now: &str,
+    ) -> Result<Vec<T>, StorageError> {
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            SELECT payload_json
+            FROM {table}
+            WHERE
+                status = 'ready'
+                OR (status = 'retry-wait' AND next_attempt_at <= $1::timestamptz)
+                OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= $1::timestamptz)
+            ORDER BY next_attempt_at, created_at, job_key
+            "#
+        );
+        let rows = sqlx::query_as::<_, (String,)>(sql.as_str())
+            .bind(now)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|(value_json,)| serde_json::from_str(&value_json).map_err(StorageError::from))
+            .collect()
+    }
+
     pub async fn upsert_json<T: Serialize>(
         &self,
         namespace: &str,
@@ -879,34 +932,34 @@ impl LocalCredentialStore {
         self.store.read("credentials/node-authorization.json")
     }
 
-    pub fn write_agent_registration<T: Serialize>(
+    pub fn write_resource_registration<T: Serialize>(
         &self,
-        agent_did: &str,
+        resource_did: &str,
         credential: &T,
     ) -> Result<(), StorageError> {
         self.write_credential(
-            "agent-registration",
+            "resource-registration",
             "registrar",
-            agent_did,
+            resource_did,
             "latest",
             credential,
         )?;
         self.store.write(
             Path::new("credentials")
-                .join("agent-registrations")
-                .join(did_to_file_name(agent_did)),
+                .join("resource-registrations")
+                .join(did_to_file_name(resource_did)),
             credential,
         )
     }
 
-    pub fn read_agent_registration<T: DeserializeOwned>(
+    pub fn read_resource_registration<T: DeserializeOwned>(
         &self,
-        agent_did: &str,
+        resource_did: &str,
     ) -> Result<T, StorageError> {
         self.store.read(
             Path::new("credentials")
-                .join("agent-registrations")
-                .join(did_to_file_name(agent_did)),
+                .join("resource-registrations")
+                .join(did_to_file_name(resource_did)),
         )
     }
 
@@ -984,16 +1037,16 @@ mod tests {
     #[test]
     fn converts_did_to_file_name() {
         assert_eq!(
-            did_to_file_name("did:ans:AGDM:efabc"),
-            "did_ans_AGDM_efabc.json"
+            did_to_file_name("did:oan:AGDM:efabc"),
+            "did_oan_AGDM_efabc.json"
         );
     }
 
     #[test]
     fn converts_values_to_storage_safe_names() {
         assert_eq!(
-            storage_safe_name("did:ans:AGDM:efabc#credential/1"),
-            "did_ans_AGDM_efabc_credential_1"
+            storage_safe_name("did:oan:AGDM:efabc#credential/1"),
+            "did_oan_AGDM_efabc_credential_1"
         );
     }
 
@@ -1007,15 +1060,16 @@ mod tests {
 
         store.write_node_authorization(&credential).unwrap();
         store
-            .write_agent_registration("did:ans:AGDM:efabc", &credential)
+            .write_resource_registration("did:oan:AGDM:efabc", &credential)
             .unwrap();
 
         let node_credential: Example = store.read_node_authorization().unwrap();
-        let agent_credential: Example =
-            store.read_agent_registration("did:ans:AGDM:efabc").unwrap();
+        let resource_credential: Example = store
+            .read_resource_registration("did:oan:AGDM:efabc")
+            .unwrap();
 
         assert_eq!(node_credential, credential);
-        assert_eq!(agent_credential, credential);
+        assert_eq!(resource_credential, credential);
         assert!(dir
             .path()
             .join("credentials/node-authorization.json")
@@ -1040,8 +1094,8 @@ mod tests {
         store
             .write_credential(
                 "trust-authorization",
-                "did:ans:AGRT:efroot",
-                "did:ans:AGDS:efdiscovery",
+                "did:oan:AGRT:efroot",
+                "did:oan:AGDS:efdiscovery",
                 "root-auth-v1",
                 &trust_credential,
             )
@@ -1049,8 +1103,8 @@ mod tests {
         store
             .write_credential(
                 "capability-attestation",
-                "did:ans:AGRG:efregistrar",
-                "did:ans:AGDS:efdiscovery",
+                "did:oan:AGRG:efregistrar",
+                "did:oan:AGDS:efdiscovery",
                 "capability-v1",
                 &capability_credential,
             )
@@ -1059,16 +1113,16 @@ mod tests {
         let loaded_trust: Example = store
             .read_credential(
                 "trust-authorization",
-                "did:ans:AGRT:efroot",
-                "did:ans:AGDS:efdiscovery",
+                "did:oan:AGRT:efroot",
+                "did:oan:AGDS:efdiscovery",
                 "root-auth-v1",
             )
             .unwrap();
         let loaded_capability: Example = store
             .read_credential(
                 "capability-attestation",
-                "did:ans:AGRG:efregistrar",
-                "did:ans:AGDS:efdiscovery",
+                "did:oan:AGRG:efregistrar",
+                "did:oan:AGDS:efdiscovery",
                 "capability-v1",
             )
             .unwrap();
@@ -1179,6 +1233,11 @@ mod tests {
 
         let active: Vec<Example> = store.read_active_leased_jobs("root_jobs").await.unwrap();
         assert_eq!(active.len(), 1);
+        let ready: Vec<Example> = store
+            .read_ready_leased_jobs("root_jobs", "2026-05-29T00:00:02Z")
+            .await
+            .unwrap();
+        assert!(ready.is_empty());
 
         store
             .mark_leased_job_retry(
@@ -1189,6 +1248,19 @@ mod tests {
             )
             .await
             .unwrap();
+        let ready_before_retry: Vec<Example> = store
+            .read_ready_leased_jobs("root_jobs", "2026-05-29T00:09:59Z")
+            .await
+            .unwrap();
+        assert!(ready_before_retry.is_empty());
+        let active_before_retry: Vec<Example> =
+            store.read_active_leased_jobs("root_jobs").await.unwrap();
+        assert_eq!(active_before_retry.len(), 1);
+        let ready_after_retry: Vec<Example> = store
+            .read_ready_leased_jobs("root_jobs", "2026-05-29T00:10:02Z")
+            .await
+            .unwrap();
+        assert_eq!(ready_after_retry.len(), 1);
         let leased_again: Vec<LeasedJob<Example>> = store
             .lease_ready_jobs(
                 "root_jobs",

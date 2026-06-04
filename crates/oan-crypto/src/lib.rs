@@ -562,7 +562,7 @@ mod tests {
         let input = signature_input(CryptoSuite::Ed25519Sha256Legacy, &payload).unwrap();
         let proof = DataIntegrityProof {
             proof_type: "Ed25519Signature2020".to_owned(),
-            creator: "did:ans:AGDM:test#key-1".to_owned(),
+            creator: "did:oan:AGDM:test#key-1".to_owned(),
             created: chrono::Utc::now(),
             proof_purpose: "assertionMethod".to_owned(),
             proof_value: sign_bytes(&keypair.signing_key, &input).unwrap(),
@@ -580,8 +580,8 @@ mod tests {
         let payload = json!({"a": 1});
         let proof = build_data_integrity_proof(
             &payload,
-            "did:ans:AGDM:test#key-1".to_owned(),
-            "did:ans:AGDM:test#key-1".to_owned(),
+            "did:oan:AGDM:test#key-1".to_owned(),
+            "did:oan:AGDM:test#key-1".to_owned(),
             &keypair.signing_key,
         )
         .unwrap();

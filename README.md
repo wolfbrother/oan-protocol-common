@@ -17,12 +17,12 @@ third-party implementations.
 `oan-protocol-common` should provide low-level, runtime-independent protocol
 building blocks:
 
-- `did:ans` types, parsing, and validation
+- `did:oan` types, parsing, generation, and validation
 - protocol data models and version constants
 - DID Document and credential structures
 - canonical JSON, hashing, signing, and verification helpers
 - trusted invocation envelope structures
-- discovery response and verified package models
+- discovery response and resource package models
 - common error types and validation results
 - test vectors and schema-oriented helpers where appropriate
 
@@ -50,11 +50,13 @@ The preferred shape is one GitHub repository publishing multiple crates:
 
 ```text
 crates/
-  oan-did-ans/
+  oan-did-oan/
+  oan-core/
   oan-crypto/
   oan-credentials/
+  oan-package/
   oan-protocol/
-  oan-protocol-common/
+  oan-storage/
 ```
 
 The smaller crates can be used directly by advanced implementers. The
