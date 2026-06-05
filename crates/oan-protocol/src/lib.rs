@@ -17,7 +17,11 @@ pub const PROTOCOL_VERSION: &str = OAN_RESOURCE_PROTOCOL_VERSION;
 pub const PURPOSE_RESOURCE_REGISTRATION: &str = "resource-registration";
 pub const PURPOSE_VERIFY_AND_PUBLISH: &str = "verify-and-publish";
 pub const PURPOSE_CDN_PUBLISH: &str = "cdn-publish";
+pub const PURPOSE_INFRASTRUCTURE_AUTHORIZATION_VC_ISSUE: &str =
+    "infrastructure-authorization-vc-issue";
 pub const PATH_ROOT_RESOURCES_VERIFY_AND_PUBLISH: &str = "/root/resources/verify-and-publish";
+pub const PATH_ROOT_INFRASTRUCTURE_AUTHORIZATION_VCS_ISSUE: &str =
+    "/root/infrastructure/authorization-vcs/issue";
 pub const PATH_CDN_RESOURCES: &str = "/cdn/resources";
 pub const REGISTRATION_FLOW: &str = "did-control";
 
@@ -226,6 +230,28 @@ pub struct RootAuthorizeRequest {
     pub target_role: String,
     #[serde(rename = "didDocument")]
     pub did_document: DidDocument,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InfrastructureAuthorizationVcIssuePayload {
+    #[serde(rename = "subjectDid")]
+    pub subject_did: String,
+    pub role: String,
+    #[serde(rename = "didDocument")]
+    pub did_document: DidDocument,
+    #[serde(rename = "didDocumentStableHash")]
+    pub did_document_stable_hash: String,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InfrastructureAuthorizationVcIssueRequest {
+    pub payload: InfrastructureAuthorizationVcIssuePayload,
+    #[serde(rename = "upstreamAuth")]
+    pub upstream_auth: SignedRequestEnvelope,
 }
 
 pub type DiscoveryResponseProof = DataIntegrityProof;
