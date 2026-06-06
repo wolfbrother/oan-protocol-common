@@ -119,9 +119,11 @@ impl SqliteJsonStore {
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
             .busy_timeout(Duration::from_secs(30));
         let max_connections = configured_pool_max_connections("OAN_SQLITE_MAX_CONNECTIONS", 32);
+        let acquire_timeout_seconds =
+            configured_pool_timeout_seconds("OAN_SQLITE_ACQUIRE_TIMEOUT_SECONDS", 30);
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(max_connections)
-            .acquire_timeout(Duration::from_secs(30))
+            .acquire_timeout(Duration::from_secs(acquire_timeout_seconds))
             .connect_with(options)
             .await?;
         ensure_json_records_sqlite(&pool).await?;
@@ -455,9 +457,11 @@ impl PostgresJsonStore {
             return Err(StorageError::UnsupportedDatabaseUrl);
         }
         let max_connections = configured_pool_max_connections("OAN_POSTGRES_MAX_CONNECTIONS", 32);
+        let acquire_timeout_seconds =
+            configured_pool_timeout_seconds("OAN_POSTGRES_ACQUIRE_TIMEOUT_SECONDS", 30);
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(max_connections)
-            .acquire_timeout(Duration::from_secs(30))
+            .acquire_timeout(Duration::from_secs(acquire_timeout_seconds))
             .connect(config.url())
             .await?;
         ensure_json_records_postgres(&pool).await?;
@@ -778,6 +782,14 @@ fn configured_pool_max_connections(env_key: &str, default: u32) -> u32 {
     env::var(env_key)
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn configured_pool_timeout_seconds(env_key: &str, default: u64) -> u64 {
+    env::var(env_key)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default)
 }
@@ -1142,6 +1154,29 @@ mod tests {
         assert_eq!(postgres.backend(), DatabaseBackend::Postgres);
         assert_eq!(postgres.url(), "postgres://localhost/oan");
         assert_eq!(postgres.path(), None);
+    }
+
+    #[test]
+    fn pool_env_helpers_ignore_missing_invalid_or_zero_values() {
+        let max_key = "OAN_TEST_POOL_MAX_CONNECTIONS";
+        let timeout_key = "OAN_TEST_POOL_TIMEOUT_SECONDS";
+        std::env::remove_var(max_key);
+        std::env::remove_var(timeout_key);
+        assert_eq!(configured_pool_max_connections(max_key, 11), 11);
+        assert_eq!(configured_pool_timeout_seconds(timeout_key, 22), 22);
+
+        std::env::set_var(max_key, "not-a-number");
+        std::env::set_var(timeout_key, "0");
+        assert_eq!(configured_pool_max_connections(max_key, 11), 11);
+        assert_eq!(configured_pool_timeout_seconds(timeout_key, 22), 22);
+
+        std::env::set_var(max_key, "17");
+        std::env::set_var(timeout_key, "41");
+        assert_eq!(configured_pool_max_connections(max_key, 11), 17);
+        assert_eq!(configured_pool_timeout_seconds(timeout_key, 22), 41);
+
+        std::env::remove_var(max_key);
+        std::env::remove_var(timeout_key);
     }
 
     #[tokio::test]

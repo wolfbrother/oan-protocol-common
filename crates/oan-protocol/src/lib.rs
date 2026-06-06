@@ -23,6 +23,7 @@ pub const PATH_ROOT_RESOURCES_VERIFY_AND_PUBLISH: &str = "/root/resources/verify
 pub const PATH_ROOT_INFRASTRUCTURE_AUTHORIZATION_VCS_ISSUE: &str =
     "/root/infrastructure/authorization-vcs/issue";
 pub const PATH_CDN_RESOURCES: &str = "/cdn/resources";
+pub const PATH_CDN_RESOURCES_BATCH: &str = "/cdn/resources/batch";
 pub const REGISTRATION_FLOW: &str = "did-control";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -220,6 +221,38 @@ pub struct ResourceCdnPublishRequest {
     pub package: ResourcePackage,
     #[serde(rename = "upstreamAuth")]
     pub upstream_auth: SignedRequestEnvelope,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResourceCdnPublishBatchItem {
+    #[serde(rename = "publicationCursor")]
+    pub publication_cursor: i64,
+    pub package: ResourcePackage,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResourceCdnBatchPublishRequest {
+    pub items: Vec<ResourceCdnPublishBatchItem>,
+    #[serde(rename = "upstreamAuth")]
+    pub upstream_auth: SignedRequestEnvelope,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResourceCdnIndexItem {
+    pub cursor: i64,
+    pub package: ResourcePackage,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResourceCdnIndexResponse {
+    pub items: Vec<ResourceCdnIndexItem>,
+    pub count: usize,
+    #[serde(rename = "afterCursor")]
+    pub after_cursor: i64,
+    #[serde(rename = "nextCursor")]
+    pub next_cursor: i64,
+    #[serde(rename = "hasMore")]
+    pub has_more: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -492,6 +525,7 @@ mod tests {
             "/root/resources/verify-and-publish"
         );
         assert_eq!(PATH_CDN_RESOURCES, "/cdn/resources");
+        assert_eq!(PATH_CDN_RESOURCES_BATCH, "/cdn/resources/batch");
     }
 
     #[test]
