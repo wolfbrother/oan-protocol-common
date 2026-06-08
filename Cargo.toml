@@ -9,6 +9,8 @@ members = [
     "crates/oan-storage",
     "crates/oan-protocol",
     "crates/oan-client",
+    "crates/oan-service-security",
+    "crates/oan-publication-events",
 ]
 resolver = "2"
 
@@ -19,6 +21,7 @@ repository = "https://github.com/wolfbrother/oan-protocol-common"
 version = "0.1.0"
 
 [workspace.dependencies]
+anyhow = "1"
 base64 = "0.22"
 bs58 = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
@@ -38,3 +41,12 @@ tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
+
+oan-bulletin = { path = "crates/oan-bulletin" }
+oan-core = { path = "crates/oan-core" }
+oan-credentials = { path = "crates/oan-credentials" }
+oan-crypto = { path = "crates/oan-crypto" }
+oan-did-oan = { path = "crates/oan-did-oan" }
+oan-package = { path = "crates/oan-package" }
+oan-protocol = { path = "crates/oan-protocol" }
+oan-storage = { path = "crates/oan-storage" }

@@ -1198,6 +1198,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "oan-publication-events"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+]
+
+[[package]]
+name = "oan-service-security"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "oan-core",
+ "oan-crypto",
+ "oan-protocol",
+ "oan-storage",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "oan-storage"
 version = "0.1.0"
 dependencies = [
