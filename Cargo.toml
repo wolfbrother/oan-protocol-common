@@ -16,7 +16,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-license = "AGPL-3.0-only"
+license = "Apache-2.0"
 repository = "https://github.com/wolfbrother/oan-protocol-common"
 version = "0.1.0"
 
