@@ -29,6 +29,12 @@ building blocks:
 The crate set should remain lightweight and avoid coupling the protocol layer to
 specific service runtimes.
 
+## License
+
+This core protocol repository is licensed under `AGPL-3.0-only`. Commercial or
+alternative licensing may be available from the project maintainers. Brand and
+official OpenAgenet / OAN identity rights are reserved separately.
+
 ## Out of Scope
 
 The common protocol layer should not contain:
