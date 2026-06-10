@@ -152,7 +152,11 @@ pub struct ResourceRegistrationSubmission {
     pub metadata_hash: String,
     #[serde(rename = "hashAlgorithm")]
     pub hash_algorithm: String,
-    #[serde(rename = "registrationCredential")]
+    #[serde(
+        rename = "registrationCredential",
+        default,
+        skip_serializing_if = "Value::is_null"
+    )]
     pub registration_credential: Value,
     #[serde(rename = "subjectControlProof")]
     pub subject_control_proof: SubjectControlProofBundle,
