@@ -6,7 +6,7 @@
 //! Storage helpers for local OpenAgenet nodes.
 
 use serde::{de::DeserializeOwned, Serialize};
-use sqlx::{Executor, Pool, Postgres, Sqlite};
+use sqlx::{Executor, Pool, Postgres, QueryBuilder, Sqlite};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -290,6 +290,41 @@ impl SqliteJsonStore {
         Ok(())
     }
 
+    pub async fn mark_leased_jobs_succeeded(
+        &self,
+        table: &str,
+        job_keys: &[String],
+    ) -> Result<u64, StorageError> {
+        if job_keys.is_empty() {
+            return Ok(0);
+        }
+        let table = validated_identifier(table)?;
+        let mut affected = 0u64;
+        let mut tx = self.pool.begin().await?;
+        for chunk in job_keys.chunks(500) {
+            let mut builder = QueryBuilder::<Sqlite>::new(format!(
+                r#"
+                UPDATE {table}
+                SET
+                    status = 'succeeded',
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    last_error = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE job_key IN (
+                "#
+            ));
+            let mut separated = builder.separated(", ");
+            for job_key in chunk {
+                separated.push_bind(job_key);
+            }
+            separated.push_unseparated(")");
+            affected += builder.build().execute(&mut *tx).await?.rows_affected();
+        }
+        tx.commit().await?;
+        Ok(affected)
+    }
+
     pub async fn mark_leased_job_retry(
         &self,
         table: &str,
@@ -319,6 +354,45 @@ impl SqliteJsonStore {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn mark_leased_jobs_retry(
+        &self,
+        table: &str,
+        jobs: &[(String, String)],
+        next_attempt_at: &str,
+    ) -> Result<u64, StorageError> {
+        if jobs.is_empty() {
+            return Ok(0);
+        }
+        let table = validated_identifier(table)?;
+        let mut affected = 0u64;
+        let mut tx = self.pool.begin().await?;
+        for (job_key, last_error) in jobs {
+            let sql = format!(
+                r#"
+                UPDATE {table}
+                SET
+                    status = 'retry-wait',
+                    attempt_count = attempt_count + 1,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    next_attempt_at = ?,
+                    last_error = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE job_key = ?
+                "#
+            );
+            affected += sqlx::query(sql.as_str())
+                .bind(next_attempt_at)
+                .bind(last_error)
+                .bind(job_key)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+        }
+        tx.commit().await?;
+        Ok(affected)
     }
 
     pub async fn read_active_leased_jobs<T: DeserializeOwned>(
@@ -495,6 +569,9 @@ impl PostgresJsonStore {
             );
             CREATE INDEX IF NOT EXISTS idx_{table}_status_schedule
             ON {table}(status, next_attempt_at, lease_expires_at, job_key);
+            CREATE INDEX IF NOT EXISTS idx_{table}_active_schedule
+            ON {table}(next_attempt_at, lease_expires_at, created_at, job_key)
+            WHERE status IN ('ready', 'leased', 'retry-wait');
             "#
         );
         self.pool.execute(sql.as_str()).await?;
@@ -543,55 +620,49 @@ impl PostgresJsonStore {
         lease_expires_at: &str,
     ) -> Result<Vec<LeasedJob<T>>, StorageError> {
         let table = validated_identifier(table)?;
-        let select_sql = format!(
+        let lease_sql = format!(
             r#"
-            SELECT job_key, payload_json, attempt_count
-            FROM {table}
-            WHERE
-                (
-                    status = 'ready'
-                    OR (status = 'retry-wait' AND next_attempt_at <= $1::timestamptz)
-                    OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= $1::timestamptz)
-                )
-            ORDER BY next_attempt_at, created_at, job_key
-            LIMIT $2
-            FOR UPDATE SKIP LOCKED
-            "#
-        );
-        let update_sql = format!(
-            r#"
-            UPDATE {table}
+            WITH candidates AS (
+                SELECT job_key
+                FROM {table}
+                WHERE
+                    (
+                        status = 'ready'
+                        OR (status = 'retry-wait' AND next_attempt_at <= $1::timestamptz)
+                        OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= $1::timestamptz)
+                    )
+                ORDER BY next_attempt_at, created_at, job_key
+                LIMIT $2
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE {table} AS jobs
             SET
                 status = 'leased',
-                lease_owner = $1,
-                lease_expires_at = $2::timestamptz,
+                lease_owner = $3,
+                lease_expires_at = $4::timestamptz,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE job_key = $3
+            FROM candidates
+            WHERE jobs.job_key = candidates.job_key
+            RETURNING jobs.job_key, jobs.payload_json, jobs.attempt_count
             "#
         );
-
-        let mut tx = self.pool.begin().await?;
-        let selected = sqlx::query_as::<_, (String, String, i64)>(select_sql.as_str())
+        let leased_rows = sqlx::query_as::<_, (String, String, i64)>(lease_sql.as_str())
             .bind(now)
             .bind(limit)
-            .fetch_all(&mut *tx)
+            .bind(worker_id)
+            .bind(lease_expires_at)
+            .fetch_all(&self.pool)
             .await?;
-        let mut leased = Vec::new();
-        for (job_key, payload_json, attempt_count) in selected {
-            sqlx::query(update_sql.as_str())
-                .bind(worker_id)
-                .bind(lease_expires_at)
-                .bind(&job_key)
-                .execute(&mut *tx)
-                .await?;
-            leased.push(LeasedJob {
-                job_key,
-                payload: serde_json::from_str(&payload_json)?,
-                attempt_count,
-            });
-        }
-        tx.commit().await?;
-        Ok(leased)
+        leased_rows
+            .into_iter()
+            .map(|(job_key, payload_json, attempt_count)| {
+                Ok(LeasedJob {
+                    job_key,
+                    payload: serde_json::from_str(&payload_json)?,
+                    attempt_count,
+                })
+            })
+            .collect()
     }
 
     pub async fn mark_leased_job_succeeded(
@@ -617,6 +688,34 @@ impl PostgresJsonStore {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn mark_leased_jobs_succeeded(
+        &self,
+        table: &str,
+        job_keys: &[String],
+    ) -> Result<u64, StorageError> {
+        if job_keys.is_empty() {
+            return Ok(0);
+        }
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            UPDATE {table}
+            SET
+                status = 'succeeded',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE job_key = ANY($1)
+            "#
+        );
+        let result = sqlx::query(sql.as_str())
+            .bind(job_keys)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
     }
 
     pub async fn mark_leased_job_retry(
@@ -648,6 +747,51 @@ impl PostgresJsonStore {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn mark_leased_jobs_retry(
+        &self,
+        table: &str,
+        jobs: &[(String, String)],
+        next_attempt_at: &str,
+    ) -> Result<u64, StorageError> {
+        if jobs.is_empty() {
+            return Ok(0);
+        }
+        let table = validated_identifier(table)?;
+        let sql = format!(
+            r#"
+            WITH retry_jobs(job_key, last_error) AS (
+                SELECT * FROM UNNEST($1::text[], $2::text[])
+            )
+            UPDATE {table} AS jobs
+            SET
+                status = 'retry-wait',
+                attempt_count = jobs.attempt_count + 1,
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_attempt_at = $3::timestamptz,
+                last_error = retry_jobs.last_error,
+                updated_at = CURRENT_TIMESTAMP
+            FROM retry_jobs
+            WHERE jobs.job_key = retry_jobs.job_key
+            "#
+        );
+        let job_keys = jobs
+            .iter()
+            .map(|(job_key, _)| job_key.as_str())
+            .collect::<Vec<_>>();
+        let last_errors = jobs
+            .iter()
+            .map(|(_, last_error)| last_error.as_str())
+            .collect::<Vec<_>>();
+        let result = sqlx::query(sql.as_str())
+            .bind(job_keys)
+            .bind(last_errors)
+            .bind(next_attempt_at)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
     }
 
     pub async fn read_active_leased_jobs<T: DeserializeOwned>(
@@ -1315,5 +1459,65 @@ mod tests {
             .unwrap();
         let active: Vec<Example> = store.read_active_leased_jobs("root_jobs").await.unwrap();
         assert!(active.is_empty());
+    }
+
+    #[tokio::test]
+    async fn leased_job_table_marks_batches_succeeded_and_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("sqlite:{}", dir.path().join("leased-batch.db").display());
+        let store = SqliteJsonStore::connect(&url).await.unwrap();
+        store.ensure_leased_job_table("root_jobs").await.unwrap();
+        for index in 1..=3 {
+            store
+                .enqueue_leased_job(
+                    "root_jobs",
+                    &format!("job-{index}"),
+                    &Example {
+                        value: format!("payload-{index}"),
+                    },
+                    "2026-05-29T00:00:00Z",
+                )
+                .await
+                .unwrap();
+        }
+
+        let leased: Vec<LeasedJob<Example>> = store
+            .lease_ready_jobs(
+                "root_jobs",
+                "worker-a",
+                10,
+                "2026-05-29T00:00:01Z",
+                "2026-05-29T00:05:01Z",
+            )
+            .await
+            .unwrap();
+        assert_eq!(leased.len(), 3);
+
+        let succeeded = vec!["job-1".to_owned(), "job-2".to_owned()];
+        let affected = store
+            .mark_leased_jobs_succeeded("root_jobs", &succeeded)
+            .await
+            .unwrap();
+        assert_eq!(affected, 2);
+        let retries = vec![("job-3".to_owned(), "network".to_owned())];
+        let affected = store
+            .mark_leased_jobs_retry("root_jobs", &retries, "2026-05-29T00:10:01Z")
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+
+        let active: Vec<Example> = store.read_active_leased_jobs("root_jobs").await.unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].value, "payload-3");
+        let ready_before_retry: Vec<Example> = store
+            .read_ready_leased_jobs("root_jobs", "2026-05-29T00:09:59Z")
+            .await
+            .unwrap();
+        assert!(ready_before_retry.is_empty());
+        let ready_after_retry: Vec<Example> = store
+            .read_ready_leased_jobs("root_jobs", "2026-05-29T00:10:02Z")
+            .await
+            .unwrap();
+        assert_eq!(ready_after_retry.len(), 1);
     }
 }
