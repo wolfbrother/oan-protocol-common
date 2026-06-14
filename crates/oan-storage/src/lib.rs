@@ -530,11 +530,14 @@ impl PostgresJsonStore {
         if config.backend() != DatabaseBackend::Postgres {
             return Err(StorageError::UnsupportedDatabaseUrl);
         }
-        let max_connections = configured_pool_max_connections("OAN_POSTGRES_MAX_CONNECTIONS", 32);
+        let max_connections = configured_pool_max_connections("OAN_POSTGRES_MAX_CONNECTIONS", 8);
         let acquire_timeout_seconds =
             configured_pool_timeout_seconds("OAN_POSTGRES_ACQUIRE_TIMEOUT_SECONDS", 30);
         let pool = sqlx::postgres::PgPoolOptions::new()
+            .min_connections(0)
             .max_connections(max_connections)
+            .idle_timeout(Some(Duration::from_secs(30)))
+            .max_lifetime(Some(Duration::from_secs(300)))
             .acquire_timeout(Duration::from_secs(acquire_timeout_seconds))
             .connect(config.url())
             .await?;
@@ -572,6 +575,17 @@ impl PostgresJsonStore {
             CREATE INDEX IF NOT EXISTS idx_{table}_active_schedule
             ON {table}(next_attempt_at, lease_expires_at, created_at, job_key)
             WHERE status IN ('ready', 'leased', 'retry-wait');
+            CREATE INDEX IF NOT EXISTS idx_{table}_ready_claim
+            ON {table}(next_attempt_at, created_at, job_key)
+            WHERE status = 'ready';
+            CREATE INDEX IF NOT EXISTS idx_{table}_retry_claim
+            ON {table}(next_attempt_at, created_at, job_key)
+            WHERE status = 'retry-wait';
+            CREATE INDEX IF NOT EXISTS idx_{table}_leased_reclaim
+            ON {table}(lease_expires_at, created_at, job_key)
+            WHERE status = 'leased';
+            CREATE INDEX IF NOT EXISTS idx_{table}_status_updated
+            ON {table}(status, updated_at, job_key);
             "#
         );
         self.pool.execute(sql.as_str()).await?;
@@ -762,7 +776,8 @@ impl PostgresJsonStore {
         let sql = format!(
             r#"
             WITH retry_jobs(job_key, last_error) AS (
-                SELECT * FROM UNNEST($1::text[], $2::text[])
+                SELECT *
+                FROM UNNEST($1::text[], $2::text[])
             )
             UPDATE {table} AS jobs
             SET
@@ -777,21 +792,25 @@ impl PostgresJsonStore {
             WHERE jobs.job_key = retry_jobs.job_key
             "#
         );
-        let job_keys = jobs
-            .iter()
-            .map(|(job_key, _)| job_key.as_str())
-            .collect::<Vec<_>>();
-        let last_errors = jobs
-            .iter()
-            .map(|(_, last_error)| last_error.as_str())
-            .collect::<Vec<_>>();
-        let result = sqlx::query(sql.as_str())
-            .bind(job_keys)
-            .bind(last_errors)
-            .bind(next_attempt_at)
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected())
+        let mut affected = 0u64;
+        for chunk in jobs.chunks(500) {
+            let job_keys = chunk
+                .iter()
+                .map(|(job_key, _)| job_key.as_str())
+                .collect::<Vec<_>>();
+            let last_errors = chunk
+                .iter()
+                .map(|(_, last_error)| last_error.as_str())
+                .collect::<Vec<_>>();
+            let result = sqlx::query(sql.as_str())
+                .bind(job_keys)
+                .bind(last_errors)
+                .bind(next_attempt_at)
+                .execute(&self.pool)
+                .await?;
+            affected += result.rows_affected();
+        }
+        Ok(affected)
     }
 
     pub async fn read_active_leased_jobs<T: DeserializeOwned>(
@@ -1519,5 +1538,53 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ready_after_retry.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn leased_job_table_marks_large_retry_batch_without_losing_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!(
+            "sqlite:{}",
+            dir.path().join("leased-batch-large.db").display()
+        );
+        let store = SqliteJsonStore::connect(&url).await.unwrap();
+        store.ensure_leased_job_table("root_jobs").await.unwrap();
+        for index in 1..=750 {
+            store
+                .enqueue_leased_job(
+                    "root_jobs",
+                    &format!("job-{index}"),
+                    &Example {
+                        value: format!("payload-{index}"),
+                    },
+                    "2026-05-29T00:00:00Z",
+                )
+                .await
+                .unwrap();
+        }
+        let leased: Vec<LeasedJob<Example>> = store
+            .lease_ready_jobs(
+                "root_jobs",
+                "worker-a",
+                1_000,
+                "2026-05-29T00:00:01Z",
+                "2026-05-29T00:05:01Z",
+            )
+            .await
+            .unwrap();
+        assert_eq!(leased.len(), 750);
+        let retries = (1..=750)
+            .map(|index| (format!("job-{index}"), format!("error-{index}")))
+            .collect::<Vec<_>>();
+        let affected = store
+            .mark_leased_jobs_retry("root_jobs", &retries, "2026-05-29T00:10:01Z")
+            .await
+            .unwrap();
+        assert_eq!(affected, 750);
+        let ready_after_retry: Vec<Example> = store
+            .read_ready_leased_jobs("root_jobs", "2026-05-29T00:10:02Z")
+            .await
+            .unwrap();
+        assert_eq!(ready_after_retry.len(), 750);
     }
 }
