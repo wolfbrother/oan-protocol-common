@@ -710,6 +710,7 @@ mod tests {
                 resource_description: None,
                 agent_description: None,
                 capability_tags: vec![],
+                authorized_domains: vec![],
                 protocol_bindings: vec![],
                 implementation_links: vec![],
                 credential_requirements: vec![],

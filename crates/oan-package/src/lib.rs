@@ -44,6 +44,8 @@ pub struct ResourceMetadata {
     pub description: String,
     #[serde(rename = "capabilityTags", default)]
     pub capability_tags: Vec<String>,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
     #[serde(rename = "protocolBindings", default)]
     pub protocol_bindings: Vec<serde_json::Value>,
     #[serde(default)]
@@ -96,6 +98,8 @@ pub struct ResourcePackageClaims {
     pub hash_algorithm: String,
     #[serde(rename = "lifecycleState")]
     pub lifecycle_state: String,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
     #[serde(rename = "bulletinRef", skip_serializing_if = "Option::is_none")]
     pub bulletin_ref: Option<String>,
 }
@@ -188,11 +192,18 @@ impl ResourcePackage {
     }
 
     pub fn verify_metadata_consistency(&self) -> Result<(), PackageError> {
+        let did_document_domains = self
+            .did_document
+            .oan_metadata
+            .as_ref()
+            .map(|metadata| metadata.authorized_domains.as_slice())
+            .unwrap_or_default();
         if self.metadata.resource_did == self.resource_did
             && self.metadata.package_version == self.package_version
             && self.metadata.package_hash == self.package_hash
             && self.metadata.metadata_hash == self.metadata_hash
             && self.metadata.hash_algorithm == self.hash_algorithm
+            && did_document_domains == self.metadata.authorized_domains.as_slice()
         {
             Ok(())
         } else {
@@ -215,6 +226,7 @@ impl ResourcePackage {
             && parsed.package_hash == self.package_hash
             && parsed.hash_algorithm == self.hash_algorithm
             && parsed.lifecycle_state == self.metadata.lifecycle_state
+            && parsed.authorized_domains == self.metadata.authorized_domains
         {
             Ok(())
         } else {
@@ -240,7 +252,7 @@ fn hash_matches(expected: &str, algorithm: &str, actual: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oan_core::{DidDocument, ResourceType};
+    use oan_core::{DidDocument, OanMetadata, ResourceType};
 
     #[test]
     fn resource_package_verifies_root_claim_binding() {
@@ -264,7 +276,28 @@ mod tests {
                 authentication: vec![],
                 assertion_method: vec![],
                 service: vec![],
-                oan_metadata: None,
+                oan_metadata: Some(OanMetadata {
+                    subject_type: ResourceType::Skill,
+                    resource_type: ResourceType::Skill,
+                    node_role: None,
+                    identity_type: None,
+                    controller_did: None,
+                    publisher_did: Some("did:oan:ORLG:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
+                    issuer_did: None,
+                    ttl: None,
+                    resource_description: None,
+                    agent_description: None,
+                    capability_tags: vec!["legal.contract.review".to_owned()],
+                    authorized_domains: vec!["legal".to_owned()],
+                    protocol_bindings: vec![],
+                    implementation_links: vec![],
+                    credential_requirements: vec![],
+                    package_info: None,
+                    service_policy: None,
+                    network_scope: None,
+                    lifecycle_state: Some("active".to_owned()),
+                    extra: Default::default(),
+                }),
             },
             did_document_hash: String::new(),
             metadata_hash: String::new(),
@@ -279,6 +312,7 @@ mod tests {
                 name: "Contract Review Skill".to_owned(),
                 description: "Review contracts and identify risk signals.".to_owned(),
                 capability_tags: vec!["legal.contract.review".to_owned()],
+                authorized_domains: vec!["legal".to_owned()],
                 protocol_bindings: vec![],
                 services: vec![],
                 lifecycle_state: "active".to_owned(),
@@ -338,9 +372,55 @@ mod tests {
             package_hash: package.package_hash.clone(),
             hash_algorithm: package.hash_algorithm.clone(),
             lifecycle_state: package.metadata.lifecycle_state.clone(),
+            authorized_domains: package.metadata.authorized_domains.clone(),
             bulletin_ref: None,
         };
         package.root_proof.package_claims = Some(serde_json::to_value(claims).unwrap());
+    }
+
+    #[test]
+    fn metadata_hash_changes_when_authorized_domains_change() {
+        let package = sample_resource_package();
+        let original_hash =
+            hash_resource_metadata_with_suite(CryptoSuite::Ed25519Sha256, &package.metadata)
+                .unwrap();
+        let mut changed = package.metadata.clone();
+        changed.authorized_domains = vec!["legal.contract".to_owned()];
+
+        let changed_hash =
+            hash_resource_metadata_with_suite(CryptoSuite::Ed25519Sha256, &changed).unwrap();
+
+        assert_ne!(original_hash, changed_hash);
+    }
+
+    #[test]
+    fn resource_package_rejects_root_claim_authorized_domains_mismatch() {
+        let mut package = sample_resource_package();
+        let mut claims: ResourcePackageClaims =
+            serde_json::from_value(package.root_proof.package_claims.clone().unwrap()).unwrap();
+        claims.authorized_domains = vec!["finance".to_owned()];
+        package.root_proof.package_claims = Some(serde_json::to_value(claims).unwrap());
+
+        assert!(matches!(
+            package.verify_root_claim_binding(),
+            Err(PackageError::RootProofClaimMismatch)
+        ));
+    }
+
+    #[test]
+    fn resource_package_rejects_did_document_authorized_domains_mismatch() {
+        let mut package = sample_resource_package();
+        package
+            .did_document
+            .oan_metadata
+            .as_mut()
+            .unwrap()
+            .authorized_domains = vec!["finance".to_owned()];
+
+        assert!(matches!(
+            package.verify_metadata_consistency(),
+            Err(PackageError::RootProofClaimMismatch)
+        ));
     }
 
     #[test]

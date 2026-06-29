@@ -332,6 +332,8 @@ pub struct ResourceDiscoveryCandidate {
     pub lifecycle_state: Option<String>,
     #[serde(rename = "capabilityTags", default)]
     pub capability_tags: Vec<String>,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
     #[serde(default)]
     pub services: Vec<ServiceEndpoint>,
     #[serde(rename = "protocolBindings", default)]
@@ -377,6 +379,8 @@ pub struct ResourceRootDiscoveryNotificationItem {
     pub bulletin_event_hash: String,
     #[serde(rename = "capabilityTags", default)]
     pub capability_tags: Vec<String>,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -471,6 +475,7 @@ mod tests {
                 }),
                 agent_description: None,
                 capability_tags: vec!["legal.contract.review".to_owned()],
+                authorized_domains: vec!["legal".to_owned()],
                 protocol_bindings: vec![],
                 implementation_links: vec![],
                 credential_requirements: vec![],
@@ -568,6 +573,7 @@ mod tests {
                 version: Some("1.0.0".to_owned()),
                 lifecycle_state: Some("active".to_owned()),
                 capability_tags: vec!["legal.contract.review".to_owned()],
+                authorized_domains: vec!["legal".to_owned()],
                 services: vec![],
                 protocol_bindings: vec![],
                 package_info: Some(json!({"packageHash": "sha256:pkg"})),
@@ -580,6 +586,10 @@ mod tests {
         };
         let value = serde_json::to_value(&response).unwrap();
         assert_eq!(value["candidates"][0]["resourceType"], "skill");
+        assert_eq!(
+            value["candidates"][0]["authorizedDomains"],
+            json!(["legal"])
+        );
         assert_eq!(
             value["candidates"][0]["resourceDid"],
             "did:oan:SKLG:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu"
@@ -785,6 +795,7 @@ mod tests {
                 bulletin_sequence: 1,
                 bulletin_event_hash: "event-hash".to_owned(),
                 capability_tags: vec!["legal.search".to_owned()],
+                authorized_domains: vec!["legal".to_owned()],
             }],
             cdn_manifest_url: "https://cdn.example.org/manifest.json".to_owned(),
             cdn_updates_url: "https://cdn.example.org/updates.json".to_owned(),
@@ -793,6 +804,7 @@ mod tests {
 
         let value = serde_json::to_value(notification).unwrap();
         assert_eq!(value["items"][0]["resourceType"], "mcp_server");
+        assert_eq!(value["items"][0]["authorizedDomains"], json!(["legal"]));
         assert_eq!(value["items"][0]["packageVersion"], "2026-06");
         assert_eq!(value["items"][0]["packageHash"], "sha256:pkg");
     }

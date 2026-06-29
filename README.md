@@ -74,5 +74,6 @@ Each crate should be publishable to crates.io with explicit versions. Local
 workspace dependencies should include both `path` and `version` so crates can be
 developed together and published independently.
 
-Official release artifacts should be generated and verified through
-`oan-release-tools` once the release process is stable.
+Official release readiness, verification, and operational gates should be
+orchestrated through the official operations skill package once the release
+process is stable.

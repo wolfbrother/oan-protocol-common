@@ -381,6 +381,8 @@ pub struct OanMetadata {
     pub agent_description: Option<AgentDescription>,
     #[serde(rename = "capabilityTags", default)]
     pub capability_tags: Vec<String>,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
     #[serde(rename = "protocolBindings", default)]
     pub protocol_bindings: Vec<ProtocolBinding>,
     #[serde(rename = "implementationLinks", default)]
@@ -530,6 +532,193 @@ impl CapabilityTagTree {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthorizedDomain {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthorizedDomainTreeNode {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<AuthorizedDomainTreeNode>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthorizedDomainTaxonomy {
+    pub version: u64,
+    #[serde(rename = "snapshotHash", skip_serializing_if = "Option::is_none")]
+    pub snapshot_hash: Option<String>,
+    #[serde(default)]
+    pub domains: Vec<AuthorizedDomain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tree: Vec<AuthorizedDomainTreeNode>,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum AuthorizedDomainError {
+    #[error("authorized domain list must not mix wildcard with concrete domains")]
+    WildcardMixed,
+    #[error("authorized domains must be sorted and unique")]
+    DuplicateOrUnsorted,
+    #[error("authorized domain is empty")]
+    EmptyDomain,
+    #[error("authorized domain is not canonical")]
+    NonCanonicalDomain,
+    #[error("authorized domain is unknown")]
+    UnknownDomain,
+}
+
+impl AuthorizedDomainTaxonomy {
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, oan_storage::StorageError> {
+        let store = oan_storage::JsonStore::new(".");
+        let mut taxonomy: Self = store.read(path)?;
+        if taxonomy.domains.is_empty() && !taxonomy.tree.is_empty() {
+            taxonomy.flatten_tree();
+        }
+        Ok(taxonomy)
+    }
+
+    pub fn normalize_domain<'a>(&'a self, value: &str) -> Option<&'a str> {
+        self.domains.iter().find_map(|domain| {
+            if domain.id == value || domain.aliases.iter().any(|alias| alias == value) {
+                Some(domain.id.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn validate_authorized_domains(
+        &self,
+        domains: &[String],
+    ) -> Result<Vec<String>, AuthorizedDomainError> {
+        if domains.is_empty() {
+            return Ok(Vec::new());
+        }
+        if domains.iter().any(|domain| domain == "*") {
+            return if domains.len() == 1 {
+                Ok(vec!["*".to_owned()])
+            } else {
+                Err(AuthorizedDomainError::WildcardMixed)
+            };
+        }
+
+        let mut normalized = Vec::with_capacity(domains.len());
+        for domain in domains {
+            if domain.is_empty() {
+                return Err(AuthorizedDomainError::EmptyDomain);
+            }
+            let canonical = self
+                .normalize_domain(domain)
+                .ok_or(AuthorizedDomainError::UnknownDomain)?;
+            if canonical != domain {
+                return Err(AuthorizedDomainError::NonCanonicalDomain);
+            }
+            if canonical.matches('.').count() > 1 {
+                return Err(AuthorizedDomainError::NonCanonicalDomain);
+            }
+            normalized.push(canonical.to_owned());
+        }
+
+        if normalized.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(AuthorizedDomainError::DuplicateOrUnsorted);
+        }
+
+        Ok(normalized)
+    }
+
+    pub fn covers_authorized_domains(
+        &self,
+        requested_domains: &[String],
+        granted_domains: &[String],
+    ) -> bool {
+        if requested_domains.is_empty() {
+            return true;
+        }
+        if granted_domains.iter().any(|domain| domain == "*") {
+            return true;
+        }
+        if granted_domains.is_empty() {
+            return false;
+        }
+
+        requested_domains.iter().all(|requested| {
+            let Some(normalized_requested) = self.normalize_domain(requested) else {
+                return false;
+            };
+            granted_domains.iter().any(|granted| {
+                self.normalize_domain(granted)
+                    .is_some_and(|normalized_granted| {
+                        self.is_descendant_or_same(normalized_requested, normalized_granted)
+                    })
+            })
+        })
+    }
+
+    pub fn flatten_tree(&mut self) {
+        if !self.domains.is_empty() || self.tree.is_empty() {
+            return;
+        }
+
+        fn walk(
+            node: &AuthorizedDomainTreeNode,
+            parent: Option<&str>,
+            domains: &mut Vec<AuthorizedDomain>,
+        ) {
+            domains.push(AuthorizedDomain {
+                id: node.id.clone(),
+                label: node.label.clone(),
+                parent: parent.map(ToOwned::to_owned),
+                aliases: vec![],
+            });
+            for child in &node.children {
+                walk(child, Some(node.id.as_str()), domains);
+            }
+        }
+
+        for node in &self.tree {
+            walk(node, None, &mut self.domains);
+        }
+    }
+
+    fn is_descendant_or_same(&self, domain_id: &str, granted_domain_id: &str) -> bool {
+        if granted_domain_id == "*" || domain_id == granted_domain_id {
+            return true;
+        }
+
+        let by_id = self
+            .domains
+            .iter()
+            .map(|domain| (domain.id.as_str(), domain))
+            .collect::<BTreeMap<_, _>>();
+        let mut current = by_id
+            .get(domain_id)
+            .and_then(|domain| domain.parent.as_deref());
+        let mut seen = BTreeSet::new();
+
+        while let Some(parent) = current {
+            if parent == granted_domain_id {
+                return true;
+            }
+            if !seen.insert(parent) {
+                return false;
+            }
+            current = by_id
+                .get(parent)
+                .and_then(|domain| domain.parent.as_deref());
+        }
+
+        false
+    }
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DidDocumentError {
     #[error("did document id is empty")]
@@ -651,6 +840,7 @@ mod tests {
                 }),
                 agent_description: None,
                 capability_tags: vec!["legal.contract.review".to_owned()],
+                authorized_domains: vec!["legal".to_owned()],
                 protocol_bindings: vec![],
                 implementation_links: vec![],
                 credential_requirements: vec![],
@@ -872,6 +1062,118 @@ mod tests {
         assert!(
             !tree.matches_authorized_domains(&["translation".to_owned()], &["finance".to_owned()])
         );
+    }
+
+    fn sample_domain_taxonomy() -> AuthorizedDomainTaxonomy {
+        AuthorizedDomainTaxonomy {
+            version: 1,
+            snapshot_hash: Some("sha256:test".to_owned()),
+            domains: vec![
+                AuthorizedDomain {
+                    id: "legal".to_owned(),
+                    label: "Legal".to_owned(),
+                    parent: None,
+                    aliases: vec![],
+                },
+                AuthorizedDomain {
+                    id: "legal.contract".to_owned(),
+                    label: "Contract".to_owned(),
+                    parent: Some("legal".to_owned()),
+                    aliases: vec![],
+                },
+                AuthorizedDomain {
+                    id: "finance".to_owned(),
+                    label: "Finance".to_owned(),
+                    parent: None,
+                    aliases: vec![],
+                },
+                AuthorizedDomain {
+                    id: "finance.banking".to_owned(),
+                    label: "Banking".to_owned(),
+                    parent: Some("finance".to_owned()),
+                    aliases: vec![],
+                },
+            ],
+            tree: vec![],
+        }
+    }
+
+    #[test]
+    fn authorized_domain_taxonomy_validates_canonical_lists() {
+        let taxonomy = sample_domain_taxonomy();
+
+        assert_eq!(
+            taxonomy
+                .validate_authorized_domains(&["finance".to_owned(), "legal.contract".to_owned()])
+                .unwrap(),
+            vec!["finance".to_owned(), "legal.contract".to_owned()]
+        );
+        assert_eq!(
+            taxonomy
+                .validate_authorized_domains(&["*".to_owned()])
+                .unwrap(),
+            vec!["*".to_owned()]
+        );
+        assert!(taxonomy
+            .validate_authorized_domains(&[])
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            taxonomy
+                .validate_authorized_domains(&["*".to_owned(), "legal".to_owned()])
+                .unwrap_err(),
+            AuthorizedDomainError::WildcardMixed
+        );
+        assert_eq!(
+            taxonomy
+                .validate_authorized_domains(&["legal".to_owned(), "legal".to_owned()])
+                .unwrap_err(),
+            AuthorizedDomainError::DuplicateOrUnsorted
+        );
+        assert_eq!(
+            taxonomy
+                .validate_authorized_domains(&["legal.unknown".to_owned()])
+                .unwrap_err(),
+            AuthorizedDomainError::UnknownDomain
+        );
+    }
+
+    #[test]
+    fn authorized_domain_taxonomy_checks_coverage() {
+        let taxonomy = sample_domain_taxonomy();
+
+        assert!(taxonomy
+            .covers_authorized_domains(&["legal.contract".to_owned()], &["legal".to_owned()]));
+        assert!(!taxonomy
+            .covers_authorized_domains(&["legal".to_owned()], &["legal.contract".to_owned()]));
+        assert!(taxonomy.covers_authorized_domains(
+            &["finance.banking".to_owned(), "legal.contract".to_owned()],
+            &["*".to_owned()]
+        ));
+        assert!(!taxonomy.covers_authorized_domains(&["finance.banking".to_owned()], &[]));
+        assert!(taxonomy.covers_authorized_domains(&[], &[]));
+    }
+
+    #[test]
+    fn loads_authorized_domain_taxonomy_snapshot() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../oan-design-docs/domains/authorized_domain_taxonomy.v1.json");
+
+        let taxonomy = AuthorizedDomainTaxonomy::load_from_path(&path).unwrap();
+
+        assert_eq!(taxonomy.version, 1);
+        assert!(taxonomy
+            .snapshot_hash
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("sha256:"));
+        assert!(taxonomy
+            .normalize_domain("finance_and_business.finance")
+            .is_some());
+        assert!(taxonomy.covers_authorized_domains(
+            &["finance_and_business.finance".to_owned()],
+            &["finance_and_business".to_owned()]
+        ));
     }
 
     #[test]
