@@ -1,0 +1,710 @@
+{
+  "version": 1,
+  "tree": [
+    {
+      "id": "agriculture",
+      "label": "agriculture",
+      "children": [
+        {
+          "id": "agriculture.agricultural_technology",
+          "label": "agricultural technology"
+        },
+        {
+          "id": "agriculture.crop_management",
+          "label": "crop management"
+        },
+        {
+          "id": "agriculture.livestock_management",
+          "label": "livestock management"
+        },
+        {
+          "id": "agriculture.precision_agriculture",
+          "label": "precision agriculture"
+        },
+        {
+          "id": "agriculture.sustainable_farming",
+          "label": "sustainable farming"
+        }
+      ]
+    },
+    {
+      "id": "education",
+      "label": "education",
+      "children": [
+        {
+          "id": "education.curriculum_design",
+          "label": "curriculum design"
+        },
+        {
+          "id": "education.e_learning",
+          "label": "e learning"
+        },
+        {
+          "id": "education.educational_technology",
+          "label": "educational technology"
+        },
+        {
+          "id": "education.learning_management_systems",
+          "label": "learning management systems"
+        },
+        {
+          "id": "education.pedagogy",
+          "label": "pedagogy"
+        }
+      ]
+    },
+    {
+      "id": "energy",
+      "label": "energy",
+      "children": [
+        {
+          "id": "energy.energy_management",
+          "label": "energy management"
+        },
+        {
+          "id": "energy.energy_storage",
+          "label": "energy storage"
+        },
+        {
+          "id": "energy.oil_and_gas",
+          "label": "oil and gas"
+        },
+        {
+          "id": "energy.power_generation",
+          "label": "power generation"
+        },
+        {
+          "id": "energy.renewable_energy",
+          "label": "renewable energy"
+        },
+        {
+          "id": "energy.smart_grids",
+          "label": "smart grids"
+        }
+      ]
+    },
+    {
+      "id": "environmental_science",
+      "label": "environmental science",
+      "children": [
+        {
+          "id": "environmental_science.climate_science",
+          "label": "climate science"
+        },
+        {
+          "id": "environmental_science.conservation_biology",
+          "label": "conservation biology"
+        },
+        {
+          "id": "environmental_science.ecology",
+          "label": "ecology"
+        },
+        {
+          "id": "environmental_science.environmental_monitoring",
+          "label": "environmental monitoring"
+        },
+        {
+          "id": "environmental_science.environmental_policy",
+          "label": "environmental policy"
+        },
+        {
+          "id": "environmental_science.sustainability",
+          "label": "sustainability"
+        }
+      ]
+    },
+    {
+      "id": "finance_and_business",
+      "label": "finance and business",
+      "children": [
+        {
+          "id": "finance_and_business.banking",
+          "label": "banking"
+        },
+        {
+          "id": "finance_and_business.consumer_goods",
+          "label": "consumer goods"
+        },
+        {
+          "id": "finance_and_business.finance",
+          "label": "finance"
+        },
+        {
+          "id": "finance_and_business.investment_services",
+          "label": "investment services"
+        },
+        {
+          "id": "finance_and_business.retail",
+          "label": "retail"
+        }
+      ]
+    },
+    {
+      "id": "government_and_public_sector",
+      "label": "government and public sector",
+      "children": [
+        {
+          "id": "government_and_public_sector.civic_engagement",
+          "label": "civic engagement"
+        },
+        {
+          "id": "government_and_public_sector.e_government",
+          "label": "e government"
+        },
+        {
+          "id": "government_and_public_sector.emergency_management",
+          "label": "emergency management"
+        },
+        {
+          "id": "government_and_public_sector.public_administration",
+          "label": "public administration"
+        },
+        {
+          "id": "government_and_public_sector.public_infrastructure",
+          "label": "public infrastructure"
+        },
+        {
+          "id": "government_and_public_sector.public_policy",
+          "label": "public policy"
+        }
+      ]
+    },
+    {
+      "id": "healthcare",
+      "label": "healthcare",
+      "children": [
+        {
+          "id": "healthcare.health_information_systems",
+          "label": "health information systems"
+        },
+        {
+          "id": "healthcare.healthcare_informatics",
+          "label": "healthcare informatics"
+        },
+        {
+          "id": "healthcare.medical_technology",
+          "label": "medical technology"
+        },
+        {
+          "id": "healthcare.patient_management_systems",
+          "label": "patient management systems"
+        },
+        {
+          "id": "healthcare.telemedicine",
+          "label": "telemedicine"
+        }
+      ]
+    },
+    {
+      "id": "hospitality_and_tourism",
+      "label": "hospitality and tourism",
+      "children": [
+        {
+          "id": "hospitality_and_tourism.event_planning",
+          "label": "event planning"
+        },
+        {
+          "id": "hospitality_and_tourism.food_and_beverage",
+          "label": "food and beverage"
+        },
+        {
+          "id": "hospitality_and_tourism.hospitality_technology",
+          "label": "hospitality technology"
+        },
+        {
+          "id": "hospitality_and_tourism.hotel_management",
+          "label": "hotel management"
+        },
+        {
+          "id": "hospitality_and_tourism.tourism_management",
+          "label": "tourism management"
+        },
+        {
+          "id": "hospitality_and_tourism.travel_services",
+          "label": "travel services"
+        }
+      ]
+    },
+    {
+      "id": "human_resources",
+      "label": "human resources",
+      "children": [
+        {
+          "id": "human_resources.compensation_and_benefits",
+          "label": "compensation and benefits"
+        },
+        {
+          "id": "human_resources.employee_relations",
+          "label": "employee relations"
+        },
+        {
+          "id": "human_resources.hr_analytics",
+          "label": "hr analytics"
+        },
+        {
+          "id": "human_resources.recruitment",
+          "label": "recruitment"
+        },
+        {
+          "id": "human_resources.training_and_development",
+          "label": "training and development"
+        }
+      ]
+    },
+    {
+      "id": "industrial_manufacturing",
+      "label": "industrial manufacturing",
+      "children": [
+        {
+          "id": "industrial_manufacturing.automation",
+          "label": "automation"
+        },
+        {
+          "id": "industrial_manufacturing.lean_manufacturing",
+          "label": "lean manufacturing"
+        },
+        {
+          "id": "industrial_manufacturing.process_engineering",
+          "label": "process engineering"
+        },
+        {
+          "id": "industrial_manufacturing.robotics",
+          "label": "robotics"
+        },
+        {
+          "id": "industrial_manufacturing.supply_chain_management",
+          "label": "supply chain management"
+        }
+      ]
+    },
+    {
+      "id": "insurance",
+      "label": "insurance",
+      "children": [
+        {
+          "id": "insurance.actuarial_science",
+          "label": "actuarial science"
+        },
+        {
+          "id": "insurance.claims_processing",
+          "label": "claims processing"
+        },
+        {
+          "id": "insurance.insurance_sales",
+          "label": "insurance sales"
+        },
+        {
+          "id": "insurance.insurtech",
+          "label": "insurtech"
+        },
+        {
+          "id": "insurance.policy_management",
+          "label": "policy management"
+        },
+        {
+          "id": "insurance.underwriting",
+          "label": "underwriting"
+        }
+      ]
+    },
+    {
+      "id": "legal",
+      "label": "legal",
+      "children": [
+        {
+          "id": "legal.contract_law",
+          "label": "contract law"
+        },
+        {
+          "id": "legal.corporate_governance",
+          "label": "corporate governance"
+        },
+        {
+          "id": "legal.intellectual_property",
+          "label": "intellectual property"
+        },
+        {
+          "id": "legal.legal_research",
+          "label": "legal research"
+        },
+        {
+          "id": "legal.litigation",
+          "label": "litigation"
+        },
+        {
+          "id": "legal.regulatory_compliance",
+          "label": "regulatory compliance"
+        }
+      ]
+    },
+    {
+      "id": "life_science",
+      "label": "life science",
+      "children": [
+        {
+          "id": "life_science.bioinformatics",
+          "label": "bioinformatics"
+        },
+        {
+          "id": "life_science.biotechnology",
+          "label": "biotechnology"
+        },
+        {
+          "id": "life_science.genomics",
+          "label": "genomics"
+        },
+        {
+          "id": "life_science.molecular_biology",
+          "label": "molecular biology"
+        },
+        {
+          "id": "life_science.pharmaceutical_research",
+          "label": "pharmaceutical research"
+        }
+      ]
+    },
+    {
+      "id": "marketing_and_advertising",
+      "label": "marketing and advertising",
+      "children": [
+        {
+          "id": "marketing_and_advertising.advertising",
+          "label": "advertising"
+        },
+        {
+          "id": "marketing_and_advertising.brand_management",
+          "label": "brand management"
+        },
+        {
+          "id": "marketing_and_advertising.digital_marketing",
+          "label": "digital marketing"
+        },
+        {
+          "id": "marketing_and_advertising.market_research",
+          "label": "market research"
+        },
+        {
+          "id": "marketing_and_advertising.marketing_analytics",
+          "label": "marketing analytics"
+        },
+        {
+          "id": "marketing_and_advertising.marketing_automation",
+          "label": "marketing automation"
+        }
+      ]
+    },
+    {
+      "id": "media_and_entertainment",
+      "label": "media and entertainment",
+      "children": [
+        {
+          "id": "media_and_entertainment.broadcasting",
+          "label": "broadcasting"
+        },
+        {
+          "id": "media_and_entertainment.content_creation",
+          "label": "content creation"
+        },
+        {
+          "id": "media_and_entertainment.digital_media",
+          "label": "digital media"
+        },
+        {
+          "id": "media_and_entertainment.gaming",
+          "label": "gaming"
+        },
+        {
+          "id": "media_and_entertainment.publishing",
+          "label": "publishing"
+        },
+        {
+          "id": "media_and_entertainment.streaming_services",
+          "label": "streaming services"
+        }
+      ]
+    },
+    {
+      "id": "real_estate",
+      "label": "real estate",
+      "children": [
+        {
+          "id": "real_estate.construction",
+          "label": "construction"
+        },
+        {
+          "id": "real_estate.facilities_management",
+          "label": "facilities management"
+        },
+        {
+          "id": "real_estate.property_management",
+          "label": "property management"
+        },
+        {
+          "id": "real_estate.proptech",
+          "label": "proptech"
+        },
+        {
+          "id": "real_estate.real_estate_investment",
+          "label": "real estate investment"
+        },
+        {
+          "id": "real_estate.urban_planning",
+          "label": "urban planning"
+        }
+      ]
+    },
+    {
+      "id": "research_and_development",
+      "label": "research and development",
+      "children": [
+        {
+          "id": "research_and_development.grant_management",
+          "label": "grant management"
+        },
+        {
+          "id": "research_and_development.innovation_management",
+          "label": "innovation management"
+        },
+        {
+          "id": "research_and_development.laboratory_management",
+          "label": "laboratory management"
+        },
+        {
+          "id": "research_and_development.product_development",
+          "label": "product development"
+        },
+        {
+          "id": "research_and_development.research_data_management",
+          "label": "research data management"
+        },
+        {
+          "id": "research_and_development.scientific_research",
+          "label": "scientific research"
+        }
+      ]
+    },
+    {
+      "id": "retail_and_ecommerce",
+      "label": "retail and ecommerce",
+      "children": [
+        {
+          "id": "retail_and_ecommerce.customer_experience",
+          "label": "customer experience"
+        },
+        {
+          "id": "retail_and_ecommerce.inventory_management",
+          "label": "inventory management"
+        },
+        {
+          "id": "retail_and_ecommerce.online_retail",
+          "label": "online retail"
+        },
+        {
+          "id": "retail_and_ecommerce.order_fulfillment",
+          "label": "order fulfillment"
+        },
+        {
+          "id": "retail_and_ecommerce.point_of_sale",
+          "label": "point of sale"
+        },
+        {
+          "id": "retail_and_ecommerce.retail_analytics",
+          "label": "retail analytics"
+        }
+      ]
+    },
+    {
+      "id": "social_services",
+      "label": "social services",
+      "children": [
+        {
+          "id": "social_services.case_management",
+          "label": "case management"
+        },
+        {
+          "id": "social_services.child_and_family_services",
+          "label": "child and family services"
+        },
+        {
+          "id": "social_services.community_outreach",
+          "label": "community outreach"
+        },
+        {
+          "id": "social_services.disability_services",
+          "label": "disability services"
+        },
+        {
+          "id": "social_services.housing_assistance",
+          "label": "housing assistance"
+        },
+        {
+          "id": "social_services.mental_health_services",
+          "label": "mental health services"
+        }
+      ]
+    },
+    {
+      "id": "sports_and_fitness",
+      "label": "sports and fitness",
+      "children": [
+        {
+          "id": "sports_and_fitness.athletic_training",
+          "label": "athletic training"
+        },
+        {
+          "id": "sports_and_fitness.fitness_and_wellness",
+          "label": "fitness and wellness"
+        },
+        {
+          "id": "sports_and_fitness.sports_analytics",
+          "label": "sports analytics"
+        },
+        {
+          "id": "sports_and_fitness.sports_management",
+          "label": "sports management"
+        },
+        {
+          "id": "sports_and_fitness.sports_medicine",
+          "label": "sports medicine"
+        },
+        {
+          "id": "sports_and_fitness.sports_technology",
+          "label": "sports technology"
+        }
+      ]
+    },
+    {
+      "id": "technology",
+      "label": "technology",
+      "children": [
+        {
+          "id": "technology.automation",
+          "label": "automation"
+        },
+        {
+          "id": "technology.blockchain",
+          "label": "blockchain"
+        },
+        {
+          "id": "technology.cloud_computing",
+          "label": "cloud computing"
+        },
+        {
+          "id": "technology.communication_systems",
+          "label": "communication systems"
+        },
+        {
+          "id": "technology.data_science",
+          "label": "data science"
+        },
+        {
+          "id": "technology.information_technology",
+          "label": "information technology"
+        },
+        {
+          "id": "technology.iot",
+          "label": "iot"
+        },
+        {
+          "id": "technology.networking",
+          "label": "networking"
+        },
+        {
+          "id": "technology.security",
+          "label": "security"
+        },
+        {
+          "id": "technology.software_engineering",
+          "label": "software engineering"
+        }
+      ]
+    },
+    {
+      "id": "telecommunications",
+      "label": "telecommunications",
+      "children": [
+        {
+          "id": "telecommunications.internet_services",
+          "label": "internet services"
+        },
+        {
+          "id": "telecommunications.iot_connectivity",
+          "label": "iot connectivity"
+        },
+        {
+          "id": "telecommunications.network_infrastructure",
+          "label": "network infrastructure"
+        },
+        {
+          "id": "telecommunications.telecom_operations",
+          "label": "telecom operations"
+        },
+        {
+          "id": "telecommunications.voip_and_unified_communications",
+          "label": "voip and unified communications"
+        },
+        {
+          "id": "telecommunications.wireless_communications",
+          "label": "wireless communications"
+        }
+      ]
+    },
+    {
+      "id": "transportation",
+      "label": "transportation",
+      "children": [
+        {
+          "id": "transportation.automotive",
+          "label": "automotive"
+        },
+        {
+          "id": "transportation.autonomous_vehicles",
+          "label": "autonomous vehicles"
+        },
+        {
+          "id": "transportation.freight",
+          "label": "freight"
+        },
+        {
+          "id": "transportation.logistics",
+          "label": "logistics"
+        },
+        {
+          "id": "transportation.public_transit",
+          "label": "public transit"
+        },
+        {
+          "id": "transportation.supply_chain",
+          "label": "supply chain"
+        }
+      ]
+    },
+    {
+      "id": "trust_and_safety",
+      "label": "trust and safety",
+      "children": [
+        {
+          "id": "trust_and_safety.content_moderation",
+          "label": "content moderation"
+        },
+        {
+          "id": "trust_and_safety.data_privacy",
+          "label": "data privacy"
+        },
+        {
+          "id": "trust_and_safety.fraud_prevention",
+          "label": "fraud prevention"
+        },
+        {
+          "id": "trust_and_safety.online_safety",
+          "label": "online safety"
+        },
+        {
+          "id": "trust_and_safety.risk_management",
+          "label": "risk management"
+        }
+      ]
+    }
+  ],
+  "snapshotHash": "sha256:c8d3f2c2a918776be57a3b5b8419ce10918a91ed4610eb570276700ddf41b1e0"
+}

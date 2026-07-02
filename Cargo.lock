@@ -1206,6 +1206,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oan-semantic-recommender"
+version = "0.1.0"
+dependencies = [
+ "oan-core",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "oan-service-security"
 version = "0.1.0"
 dependencies = [

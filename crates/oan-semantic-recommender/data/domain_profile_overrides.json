@@ -1,0 +1,170 @@
+{
+  "legal.contract_law": {
+    "description": {
+      "en": "Contract drafting, contract review, agreement analysis, clause extraction, obligations, procurement contracts, NDAs, legal risk, breach risk, and payment terms.",
+      "zh": "合同起草、合同审查、协议分析、条款抽取、义务识别、采购合同、保密协议、法律风险、违约风险和付款条款。"
+    },
+    "aliases": {
+      "en": ["contract review", "contract risk", "agreement review", "clause analysis", "NDA review", "procurement contract"],
+      "zh": ["合同审查", "合同审核", "合同风险", "协议审查", "条款分析", "保密协议", "采购合同", "违约风险", "付款条款"]
+    },
+    "keywords": {
+      "en": ["contract", "agreement", "clause", "obligation", "nda", "breach", "legal risk", "payment terms"],
+      "zh": ["合同", "协议", "条款", "义务", "保密协议", "违约", "法律风险", "付款"]
+    }
+  },
+  "legal.regulatory_compliance": {
+    "description": {
+      "en": "Regulatory compliance, policy checks, compliance review, legal controls, audit readiness, and regulated operation.",
+      "zh": "监管合规、政策检查、合规审查、法律控制、审计准备和受监管业务。"
+    },
+    "aliases": {
+      "en": ["compliance review", "regulatory compliance", "policy check", "audit compliance"],
+      "zh": ["合规审查", "监管合规", "政策检查", "审计合规", "合规风险"]
+    },
+    "keywords": {
+      "en": ["compliance", "regulatory", "policy", "audit", "control"],
+      "zh": ["合规", "监管", "政策", "审计", "控制"]
+    }
+  },
+  "trust_and_safety.fraud_prevention": {
+    "description": {
+      "en": "Fraud detection, fraud prevention, scam detection, transaction risk, abuse signals, and suspicious activity analysis.",
+      "zh": "欺诈检测、欺诈预防、诈骗识别、交易风险、滥用信号和可疑行为分析。"
+    },
+    "aliases": {
+      "en": ["fraud detection", "fraud prevention", "scam detection", "transaction risk"],
+      "zh": ["欺诈检测", "欺诈预防", "诈骗识别", "交易风险", "可疑行为"]
+    },
+    "keywords": {
+      "en": ["fraud", "scam", "abuse", "risk", "suspicious"],
+      "zh": ["欺诈", "诈骗", "滥用", "风险", "可疑"]
+    }
+  },
+  "trust_and_safety.data_privacy": {
+    "description": {
+      "en": "Data privacy, personal information protection, privacy review, data protection, consent, and sensitive data handling.",
+      "zh": "数据隐私、个人信息保护、隐私审查、数据保护、授权同意和敏感数据处理。"
+    },
+    "aliases": {
+      "en": ["data privacy", "privacy review", "personal data protection", "sensitive data"],
+      "zh": ["数据隐私", "隐私审查", "个人信息保护", "敏感数据", "数据保护"]
+    },
+    "keywords": {
+      "en": ["privacy", "personal data", "sensitive data", "consent", "protection"],
+      "zh": ["隐私", "个人信息", "敏感数据", "同意", "保护"]
+    }
+  },
+  "technology.security": {
+    "description": {
+      "en": "Cybersecurity, security audit, vulnerability detection, threat analysis, software security, smart contract security, and penetration testing.",
+      "zh": "网络安全、安全审计、漏洞检测、威胁分析、软件安全、智能合约安全和渗透测试。"
+    },
+    "aliases": {
+      "en": ["cybersecurity", "security audit", "vulnerability detection", "smart contract security", "penetration testing"],
+      "zh": ["网络安全", "安全审计", "漏洞检测", "智能合约安全", "渗透测试", "威胁分析"]
+    },
+    "keywords": {
+      "en": ["security", "vulnerability", "threat", "audit", "smart contract", "penetration"],
+      "zh": ["安全", "漏洞", "威胁", "审计", "智能合约", "渗透"]
+    }
+  },
+  "technology.software_engineering": {
+    "description": {
+      "en": "Software engineering, code generation, code review, developer tools, CI/CD, testing, debugging, and repository automation.",
+      "zh": "软件工程、代码生成、代码审查、开发者工具、持续集成、测试、调试和仓库自动化。"
+    },
+    "aliases": {
+      "en": ["software engineering", "code review", "developer tool", "testing automation", "repository automation"],
+      "zh": ["软件工程", "代码审查", "开发者工具", "测试自动化", "仓库自动化", "代码生成"]
+    },
+    "keywords": {
+      "en": ["software", "code", "developer", "testing", "debugging", "repository"],
+      "zh": ["软件", "代码", "开发", "测试", "调试", "仓库"]
+    }
+  },
+  "technology.blockchain": {
+    "description": {
+      "en": "Blockchain systems, smart contracts, wallets, decentralized applications, on-chain data, and crypto infrastructure.",
+      "zh": "区块链系统、智能合约、钱包、去中心化应用、链上数据和加密基础设施。"
+    },
+    "aliases": {
+      "en": ["blockchain", "smart contract", "wallet", "on-chain", "decentralized application"],
+      "zh": ["区块链", "智能合约", "钱包", "链上", "去中心化应用"]
+    },
+    "keywords": {
+      "en": ["blockchain", "smart contract", "wallet", "crypto", "on-chain"],
+      "zh": ["区块链", "智能合约", "钱包", "加密", "链上"]
+    }
+  },
+  "healthcare.medical_technology": {
+    "description": {
+      "en": "Medical technology, clinical tools, diagnosis assistance, medical devices, healthcare AI, and patient-facing medical systems.",
+      "zh": "医疗技术、临床工具、诊断辅助、医疗设备、医疗人工智能和面向患者的医疗系统。"
+    },
+    "aliases": {
+      "en": ["medical technology", "clinical tool", "diagnosis assistance", "medical device"],
+      "zh": ["医疗技术", "临床工具", "诊断辅助", "医疗设备", "医疗AI"]
+    },
+    "keywords": {
+      "en": ["medical", "clinical", "diagnosis", "patient", "healthcare"],
+      "zh": ["医疗", "临床", "诊断", "患者", "健康"]
+    }
+  },
+  "finance_and_business.finance": {
+    "description": {
+      "en": "Finance, financial analysis, financial planning, accounting, payments, capital markets, and business finance.",
+      "zh": "金融、财务分析、财务规划、会计、支付、资本市场和企业财务。"
+    },
+    "aliases": {
+      "en": ["financial analysis", "finance", "accounting", "payment analysis"],
+      "zh": ["金融分析", "财务分析", "财务规划", "会计", "支付分析"]
+    },
+    "keywords": {
+      "en": ["finance", "financial", "accounting", "payment", "capital"],
+      "zh": ["金融", "财务", "会计", "支付", "资本"]
+    }
+  },
+  "finance_and_business.banking": {
+    "description": {
+      "en": "Banking services, bank operations, credit, lending, deposits, and banking customer workflows.",
+      "zh": "银行服务、银行运营、信贷、贷款、存款和银行客户流程。"
+    },
+    "aliases": {
+      "en": ["banking", "credit review", "loan processing", "deposit service"],
+      "zh": ["银行", "信贷审核", "贷款处理", "存款服务"]
+    },
+    "keywords": {
+      "en": ["bank", "credit", "loan", "deposit", "lending"],
+      "zh": ["银行", "信贷", "贷款", "存款", "借贷"]
+    }
+  },
+  "sports_and_fitness.sports_technology": {
+    "description": {
+      "en": "Sports technology, athlete tracking, wearable sports devices, sports data platforms, and performance technology.",
+      "zh": "体育科技、运动员追踪、运动可穿戴设备、体育数据平台和竞技表现技术。"
+    },
+    "aliases": {
+      "en": ["sports technology", "athlete tracking", "sports wearable", "performance technology"],
+      "zh": ["体育科技", "运动员追踪", "运动可穿戴", "竞技表现技术"]
+    },
+    "keywords": {
+      "en": ["sports", "athlete", "wearable", "performance", "training"],
+      "zh": ["体育", "运动员", "可穿戴", "表现", "训练"]
+    }
+  },
+  "sports_and_fitness.sports_analytics": {
+    "description": {
+      "en": "Sports analytics, match analysis, player statistics, performance metrics, and team data analysis.",
+      "zh": "体育分析、比赛分析、球员统计、表现指标和团队数据分析。"
+    },
+    "aliases": {
+      "en": ["sports analytics", "match analysis", "player statistics", "performance metrics"],
+      "zh": ["体育分析", "比赛分析", "球员统计", "表现指标"]
+    },
+    "keywords": {
+      "en": ["analytics", "match", "player", "statistics", "performance"],
+      "zh": ["分析", "比赛", "球员", "统计", "表现"]
+    }
+  }
+}

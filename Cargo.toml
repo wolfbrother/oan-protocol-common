@@ -11,6 +11,7 @@ members = [
     "crates/oan-client",
     "crates/oan-service-security",
     "crates/oan-publication-events",
+    "crates/oan-semantic-recommender",
 ]
 resolver = "2"
 
@@ -49,4 +50,5 @@ oan-crypto = { path = "crates/oan-crypto" }
 oan-did-oan = { path = "crates/oan-did-oan" }
 oan-package = { path = "crates/oan-package" }
 oan-protocol = { path = "crates/oan-protocol" }
+oan-semantic-recommender = { path = "crates/oan-semantic-recommender" }
 oan-storage = { path = "crates/oan-storage" }
