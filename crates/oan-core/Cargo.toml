@@ -4,12 +4,16 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Core domain types shared by OAN services."
+readme = "README.md"
+keywords = ["oan", "protocol", "core"]
+categories = ["network-programming", "data-structures"]
 
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-oan-storage = { path = "../oan-storage" }
+oan-storage = { path = "../oan-storage", version = "0.1.0" }
 thiserror.workspace = true
 
 [dev-dependencies]

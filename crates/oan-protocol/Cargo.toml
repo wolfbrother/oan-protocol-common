@@ -4,11 +4,15 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Shared OpenAgenet request and response models."
+readme = "README.md"
+keywords = ["oan", "protocol", "models"]
+categories = ["network-programming", "data-structures"]
 
 [dependencies]
 chrono.workspace = true
-oan-core = { path = "../oan-core" }
-oan-did-oan = { path = "../oan-did-oan" }
-oan-package = { path = "../oan-package" }
+oan-core = { path = "../oan-core", version = "0.1.0" }
+oan-did-oan = { path = "../oan-did-oan", version = "0.1.0" }
+oan-package = { path = "../oan-package", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true

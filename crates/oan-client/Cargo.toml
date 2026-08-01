@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Rust HTTP client helpers for OAN services."
+readme = "README.md"
+keywords = ["oan", "client", "http"]
+categories = ["network-programming", "web-programming"]
 
 [dependencies]
 reqwest.workspace = true

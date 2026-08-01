@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Local JSON and SQLite storage helpers for OAN."
+readme = "README.md"
+keywords = ["oan", "storage", "sqlite", "json"]
+categories = ["database", "filesystem"]
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }

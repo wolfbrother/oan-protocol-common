@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Service-side security helpers for OAN nodes."
+categories = ["authentication", "network-programming"]
+keywords = ["oan", "security", "service"]
 
 [dependencies]
 anyhow.workspace = true

@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "did:oan parsing, generation, and validation utilities."
+readme = "README.md"
+keywords = ["oan", "did", "identity"]
+categories = ["cryptography", "encoding", "parser-implementations"]
 
 [dependencies]
 bs58.workspace = true

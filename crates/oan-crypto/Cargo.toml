@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Multi-suite cryptographic helpers for OpenAgenet."
+readme = "README.md"
+keywords = ["oan", "crypto", "sm2", "sm3", "ed25519"]
+categories = ["cryptography"]
 
 [dependencies]
 base64.workspace = true
@@ -11,7 +15,7 @@ bs58.workspace = true
 chrono.workspace = true
 ed25519-dalek.workspace = true
 hex.workspace = true
-oan-core = { path = "../oan-core" }
+oan-core = { path = "../oan-core", version = "0.1.0" }
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

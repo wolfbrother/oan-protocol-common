@@ -4,11 +4,15 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Credential models and helpers for OAN."
+readme = "README.md"
+keywords = ["oan", "credentials", "vc"]
+categories = ["authentication", "data-structures"]
 
 [dependencies]
 chrono.workspace = true
-oan-core = { path = "../oan-core" }
-oan-crypto = { path = "../oan-crypto" }
+oan-core = { path = "../oan-core", version = "0.1.0" }
+oan-crypto = { path = "../oan-crypto", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
