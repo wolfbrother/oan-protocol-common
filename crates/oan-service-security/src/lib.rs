@@ -132,6 +132,7 @@ pub struct ControllerAuthorizationVerificationContext<'a> {
     pub expected_metadata_hash: &'a str,
     pub expected_registrar_did: &'a str,
     pub expected_purpose: &'a str,
+    pub max_clock_skew_seconds: i64,
     pub now: DateTime<Utc>,
 }
 
@@ -500,6 +501,21 @@ pub fn verify_controller_authorization_proof(
     if challenge.purpose != context.expected_purpose {
         return Err(SecurityError::code(
             "controller_authorization_purpose_mismatch",
+        ));
+    }
+    if challenge.nonce.trim().is_empty() {
+        return Err(SecurityError::code(
+            "controller_authorization_nonce_missing",
+        ));
+    }
+    if challenge.issued_at > challenge.expires_at {
+        return Err(SecurityError::code(
+            "controller_authorization_time_window_invalid",
+        ));
+    }
+    if challenge.issued_at > context.now + Duration::seconds(context.max_clock_skew_seconds) {
+        return Err(SecurityError::code(
+            "controller_authorization_challenge_not_yet_valid",
         ));
     }
     if context.now > challenge.expires_at {
@@ -1028,6 +1044,7 @@ mod tests {
                 expected_metadata_hash: "sha256:meta",
                 expected_registrar_did: "did:oan:INRG:test",
                 expected_purpose: PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION,
+                max_clock_skew_seconds: 60,
                 now: Utc::now(),
             },
         )
@@ -1105,6 +1122,7 @@ mod tests {
                     expected_metadata_hash: "sha256:other",
                     expected_registrar_did: "did:oan:INRG:test",
                     expected_purpose: PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION,
+                    max_clock_skew_seconds: 60,
                     now: Utc::now(),
                 },
             )
@@ -1221,12 +1239,159 @@ mod tests {
                     expected_metadata_hash: "sha256:meta",
                     expected_registrar_did: "did:oan:INRG:test",
                     expected_purpose: PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION,
+                    max_clock_skew_seconds: 60,
                     now: Utc::now(),
                 },
             )
             .unwrap_err()
             .to_string(),
             "controller_authorization_proof_purpose_mismatch"
+        );
+    }
+
+    #[test]
+    fn controller_authorization_proof_rejects_empty_nonce() {
+        let controller_did = "did:oan:DVDM:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
+        let resource_did = "did:oan:SKDM:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let method_id = format!("{controller_did}#key-1");
+        let keypair = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let public_key_multibase = public_key_multibase(&keypair.verifying_key);
+        let controller_document = DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: controller_did.to_owned(),
+            verification_method: vec![VerificationMethod {
+                id: method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: controller_did.to_owned(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: Some("multibase".to_owned()),
+                public_key_multibase: Some(public_key_multibase),
+                public_key_jwk: None,
+            }],
+            authentication: vec![method_id.clone()],
+            assertion_method: vec![method_id.clone()],
+            capability_invocation: vec![method_id.clone()],
+            service: vec![],
+            oan_metadata: None,
+        };
+        let mut challenge =
+            create_controller_authorization_challenge(ControllerAuthorizationChallengeInput {
+                resource_did,
+                controller_did,
+                publisher_did: None,
+                did_document_hash: "sha256:doc",
+                metadata_hash: "sha256:meta",
+                registrar_did: "did:oan:INRG:test",
+                verification_method: &method_id,
+                ttl_seconds: 300,
+                nonce: String::new(),
+            });
+        challenge.nonce.clear();
+        let proof = build_data_integrity_proof(
+            &challenge,
+            controller_did.to_owned(),
+            method_id,
+            &keypair.signing_key,
+        )
+        .unwrap();
+        let bundle = ControllerAuthorizationProofBundle {
+            challenge,
+            controller_did_document: controller_document,
+            proof,
+        };
+
+        assert_eq!(
+            verify_controller_authorization_proof(
+                &bundle,
+                &ControllerAuthorizationVerificationContext {
+                    expected_resource_did: resource_did,
+                    expected_controller_did: controller_did,
+                    expected_publisher_did: None,
+                    expected_did_document_hash: "sha256:doc",
+                    expected_metadata_hash: "sha256:meta",
+                    expected_registrar_did: "did:oan:INRG:test",
+                    expected_purpose: PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION,
+                    max_clock_skew_seconds: 60,
+                    now: Utc::now(),
+                },
+            )
+            .unwrap_err()
+            .to_string(),
+            "controller_authorization_nonce_missing"
+        );
+    }
+
+    #[test]
+    fn controller_authorization_proof_rejects_future_issued_at() {
+        let controller_did = "did:oan:DVDM:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
+        let resource_did = "did:oan:SKDM:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let method_id = format!("{controller_did}#key-1");
+        let keypair = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let public_key_multibase = public_key_multibase(&keypair.verifying_key);
+        let controller_document = DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: controller_did.to_owned(),
+            verification_method: vec![VerificationMethod {
+                id: method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: controller_did.to_owned(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: Some("multibase".to_owned()),
+                public_key_multibase: Some(public_key_multibase),
+                public_key_jwk: None,
+            }],
+            authentication: vec![method_id.clone()],
+            assertion_method: vec![method_id.clone()],
+            capability_invocation: vec![method_id.clone()],
+            service: vec![],
+            oan_metadata: None,
+        };
+        let now = Utc::now();
+        let mut challenge =
+            create_controller_authorization_challenge(ControllerAuthorizationChallengeInput {
+                resource_did,
+                controller_did,
+                publisher_did: None,
+                did_document_hash: "sha256:doc",
+                metadata_hash: "sha256:meta",
+                registrar_did: "did:oan:INRG:test",
+                verification_method: &method_id,
+                ttl_seconds: 300,
+                nonce: "nonce-1".to_owned(),
+            });
+        challenge.issued_at = now + Duration::seconds(120);
+        challenge.expires_at = now + Duration::seconds(300);
+        let proof = build_data_integrity_proof(
+            &challenge,
+            controller_did.to_owned(),
+            method_id,
+            &keypair.signing_key,
+        )
+        .unwrap();
+        let bundle = ControllerAuthorizationProofBundle {
+            challenge,
+            controller_did_document: controller_document,
+            proof,
+        };
+
+        assert_eq!(
+            verify_controller_authorization_proof(
+                &bundle,
+                &ControllerAuthorizationVerificationContext {
+                    expected_resource_did: resource_did,
+                    expected_controller_did: controller_did,
+                    expected_publisher_did: None,
+                    expected_did_document_hash: "sha256:doc",
+                    expected_metadata_hash: "sha256:meta",
+                    expected_registrar_did: "did:oan:INRG:test",
+                    expected_purpose: PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION,
+                    max_clock_skew_seconds: 60,
+                    now,
+                },
+            )
+            .unwrap_err()
+            .to_string(),
+            "controller_authorization_challenge_not_yet_valid"
         );
     }
 
