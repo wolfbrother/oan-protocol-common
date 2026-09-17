@@ -11,8 +11,9 @@ categories = ["network-programming", "data-structures"]
 
 [dependencies]
 chrono.workspace = true
-oan-core = { path = "../oan-core", version = "0.1.0" }
-oan-crypto = { path = "../oan-crypto", version = "0.1.0" }
+oan-core = { path = "../oan-core", version = "1.0.0" }
+oan-crypto = { path = "../oan-crypto", version = "1.0.0" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+

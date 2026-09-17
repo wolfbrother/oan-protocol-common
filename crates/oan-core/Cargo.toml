@@ -13,8 +13,9 @@ categories = ["network-programming", "data-structures"]
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-oan-storage = { path = "../oan-storage", version = "0.1.0" }
+oan-storage = { path = "../oan-storage", version = "1.0.0" }
 thiserror.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+

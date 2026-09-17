@@ -19,7 +19,7 @@ resolver = "2"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/wolfbrother/oan-protocol-common"
-version = "0.1.0"
+version = "1.0.0"
 readme = "README.md"
 
 [workspace.dependencies]
@@ -44,12 +44,13 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 url = "2"
 
-oan-bulletin = { path = "crates/oan-bulletin", version = "0.1.0" }
-oan-core = { path = "crates/oan-core", version = "0.1.0" }
-oan-credentials = { path = "crates/oan-credentials", version = "0.1.0" }
-oan-crypto = { path = "crates/oan-crypto", version = "0.1.0" }
-oan-did-oan = { path = "crates/oan-did-oan", version = "0.1.0" }
-oan-package = { path = "crates/oan-package", version = "0.1.0" }
-oan-protocol = { path = "crates/oan-protocol", version = "0.1.0" }
-oan-semantic-recommender = { path = "crates/oan-semantic-recommender", version = "0.1.0" }
-oan-storage = { path = "crates/oan-storage", version = "0.1.0" }
+oan-bulletin = { path = "crates/oan-bulletin", version = "1.0.0" }
+oan-core = { path = "crates/oan-core", version = "1.0.0" }
+oan-credentials = { path = "crates/oan-credentials", version = "1.0.0" }
+oan-crypto = { path = "crates/oan-crypto", version = "1.0.0" }
+oan-did-oan = { path = "crates/oan-did-oan", version = "1.0.0" }
+oan-package = { path = "crates/oan-package", version = "1.0.0" }
+oan-protocol = { path = "crates/oan-protocol", version = "1.0.0" }
+oan-semantic-recommender = { path = "crates/oan-semantic-recommender", version = "1.0.0" }
+oan-storage = { path = "crates/oan-storage", version = "1.0.0" }
+

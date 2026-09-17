@@ -10,8 +10,9 @@ keywords = ["oan", "semantic", "recommender"]
 categories = ["text-processing", "web-programming"]
 
 [dependencies]
-oan-core = { path = "../oan-core", version = "0.1.0" }
+oan-core = { path = "../oan-core", version = "1.0.0" }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+
