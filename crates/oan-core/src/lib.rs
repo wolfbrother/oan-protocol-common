@@ -412,6 +412,12 @@ pub struct DidDocument {
     pub authentication: Vec<String>,
     #[serde(rename = "assertionMethod", default)]
     pub assertion_method: Vec<String>,
+    #[serde(
+        rename = "capabilityInvocation",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub capability_invocation: Vec<String>,
     #[serde(default)]
     pub service: Vec<ServiceEndpoint>,
     #[serde(rename = "oanMetadata", skip_serializing_if = "Option::is_none")]
@@ -822,6 +828,7 @@ mod tests {
             }],
             authentication: vec![format!("{did}#key-1")],
             assertion_method: vec![format!("{did}#key-1")],
+            capability_invocation: vec![format!("{did}#key-1")],
             service: vec![],
             oan_metadata: Some(OanMetadata {
                 subject_type,

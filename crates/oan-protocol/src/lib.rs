@@ -15,6 +15,8 @@ use serde_json::Value;
 pub const OAN_RESOURCE_PROTOCOL_VERSION: &str = "oan-resource-2026";
 pub const PROTOCOL_VERSION: &str = OAN_RESOURCE_PROTOCOL_VERSION;
 pub const PURPOSE_RESOURCE_REGISTRATION: &str = "resource-registration";
+pub const PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION: &str =
+    "resource-registration-controller-authorization";
 pub const PURPOSE_VERIFY_AND_PUBLISH: &str = "verify-and-publish";
 pub const PURPOSE_CDN_PUBLISH: &str = "cdn-publish";
 pub const PURPOSE_INFRASTRUCTURE_AUTHORIZATION_VC_ISSUE: &str =
@@ -134,6 +136,40 @@ pub struct SubjectControlProofBundle {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ControllerAuthorizationChallenge {
+    #[serde(rename = "challengeId")]
+    pub challenge_id: String,
+    #[serde(rename = "resourceDid")]
+    pub resource_did: String,
+    #[serde(rename = "controllerDid")]
+    pub controller_did: String,
+    #[serde(rename = "publisherDid", skip_serializing_if = "Option::is_none")]
+    pub publisher_did: Option<String>,
+    #[serde(rename = "didDocumentHash")]
+    pub did_document_hash: String,
+    #[serde(rename = "metadataHash")]
+    pub metadata_hash: String,
+    #[serde(rename = "registrarDid")]
+    pub registrar_did: String,
+    pub purpose: String,
+    #[serde(rename = "verificationMethod")]
+    pub verification_method: String,
+    pub nonce: String,
+    #[serde(rename = "issuedAt")]
+    pub issued_at: DateTime<Utc>,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ControllerAuthorizationProofBundle {
+    pub challenge: ControllerAuthorizationChallenge,
+    #[serde(rename = "controllerDidDocument")]
+    pub controller_did_document: DidDocument,
+    pub proof: DataIntegrityProof,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ResourceRegistrationSubmission {
     #[serde(rename = "resourceDid")]
     pub resource_did: String,
@@ -160,6 +196,11 @@ pub struct ResourceRegistrationSubmission {
     pub registration_credential: Value,
     #[serde(rename = "subjectControlProof")]
     pub subject_control_proof: SubjectControlProofBundle,
+    #[serde(
+        rename = "controllerAuthorizationProof",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub controller_authorization_proof: Option<ControllerAuthorizationProofBundle>,
 }
 
 impl ResourceRegistrationSubmission {
@@ -195,6 +236,24 @@ impl ResourceRegistrationSubmission {
         }
         if challenge.purpose != PURPOSE_RESOURCE_REGISTRATION {
             return Err("challenge_purpose_mismatch".to_owned());
+        }
+        if let Some(bundle) = &self.controller_authorization_proof {
+            let controller_challenge = &bundle.challenge;
+            if controller_challenge.resource_did != self.resource_did {
+                return Err("controller_authorization_resource_did_mismatch".to_owned());
+            }
+            if controller_challenge.did_document_hash != self.did_document_hash {
+                return Err("controller_authorization_did_document_hash_mismatch".to_owned());
+            }
+            if controller_challenge.metadata_hash != self.metadata_hash {
+                return Err("controller_authorization_metadata_hash_mismatch".to_owned());
+            }
+            if controller_challenge.purpose != PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION {
+                return Err("controller_authorization_purpose_mismatch".to_owned());
+            }
+            if bundle.controller_did_document.id != controller_challenge.controller_did {
+                return Err("controller_authorization_did_document_id_mismatch".to_owned());
+            }
         }
         Ok(())
     }
@@ -456,7 +515,8 @@ mod tests {
                 public_key_jwk: None,
             }],
             authentication: vec![key_id.clone()],
-            assertion_method: vec![key_id],
+            assertion_method: vec![key_id.clone()],
+            capability_invocation: vec![key_id],
             service: vec![],
             oan_metadata: Some(oan_core::OanMetadata {
                 subject_type: oan_core::ResourceType::Skill,
@@ -522,6 +582,7 @@ mod tests {
                 verified_verification_method: Some(format!("{resource_did}#key-1")),
                 proof_hash: Some("proof-hash".to_owned()),
             },
+            controller_authorization_proof: None,
         }
     }
 
@@ -646,6 +707,7 @@ mod tests {
                 ),
                 proof_hash: Some("proof-hash".to_owned()),
             },
+            controller_authorization_proof: None,
         };
         let value = serde_json::to_value(&submission).unwrap();
         assert_eq!(
