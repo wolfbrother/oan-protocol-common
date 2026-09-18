@@ -360,6 +360,24 @@ pub struct ResourceCdnIndexResponse {
     pub has_more: bool,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaginationRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PaginationResponse<T> {
+    pub items: Vec<T>,
+    pub count: usize,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    #[serde(rename = "hasMore")]
+    pub has_more: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RootAuthorizeRequest {
     #[serde(rename = "targetDid")]
@@ -711,6 +729,61 @@ mod tests {
         assert_eq!(query.version_mode, "latest");
         assert_eq!(query.limit, 10);
         assert!(query.capability_tags.is_empty());
+    }
+
+    #[test]
+    fn pagination_models_use_stable_cursor_field_names() {
+        assert_eq!(
+            serde_json::to_value(PaginationRequest::default()).unwrap(),
+            json!({})
+        );
+
+        let request = PaginationRequest {
+            cursor: Some("opaque-cursor".to_owned()),
+            limit: Some(100),
+        };
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            json!({
+                "cursor": "opaque-cursor",
+                "limit": 100
+            })
+        );
+
+        let response = PaginationResponse {
+            items: vec!["item"],
+            count: 1,
+            next_cursor: Some("next-cursor".to_owned()),
+            has_more: true,
+        };
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            json!({
+                "items": ["item"],
+                "count": 1,
+                "nextCursor": "next-cursor",
+                "hasMore": true
+            })
+        );
+
+        let decoded: PaginationResponse<String> = serde_json::from_value(json!({
+            "items": ["item"],
+            "count": 1,
+            "nextCursor": "next-cursor",
+            "hasMore": true
+        }))
+        .unwrap();
+        assert_eq!(decoded.items, vec!["item"]);
+        assert_eq!(decoded.next_cursor.as_deref(), Some("next-cursor"));
+        assert!(decoded.has_more);
+
+        let final_response: PaginationResponse<String> = serde_json::from_value(json!({
+            "items": [],
+            "count": 0,
+            "hasMore": false
+        }))
+        .unwrap();
+        assert!(final_response.next_cursor.is_none());
     }
 
     #[test]

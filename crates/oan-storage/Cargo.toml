@@ -10,6 +10,7 @@ keywords = ["oan", "storage", "sqlite", "json"]
 categories = ["database", "filesystem"]
 
 [dependencies]
+futures-util.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sqlx.workspace = true
