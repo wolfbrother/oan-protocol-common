@@ -17,6 +17,8 @@ pub const PROTOCOL_VERSION: &str = OAN_RESOURCE_PROTOCOL_VERSION;
 pub const PURPOSE_RESOURCE_REGISTRATION: &str = "resource-registration";
 pub const PURPOSE_CONTROLLER_AUTHORIZATION_REGISTRATION: &str =
     "resource-registration-controller-authorization";
+pub const PURPOSE_REGISTRATION_CREDENTIAL_QUERY: &str = "registration-credential-query";
+pub const PROTOCOL_REGISTRATION_CREDENTIAL_QUERY_V1: &str = "oan-registration-credential-query-v1";
 pub const PURPOSE_VERIFY_AND_PUBLISH: &str = "verify-and-publish";
 pub const PURPOSE_CDN_PUBLISH: &str = "cdn-publish";
 pub const PURPOSE_INFRASTRUCTURE_AUTHORIZATION_VC_ISSUE: &str =
@@ -167,6 +169,46 @@ pub struct ControllerAuthorizationProofBundle {
     #[serde(rename = "controllerDidDocument")]
     pub controller_did_document: DidDocument,
     pub proof: DataIntegrityProof,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RegistrationCredentialQueryChallenge {
+    pub method: String,
+    pub path: String,
+    #[serde(rename = "resourceDid")]
+    pub resource_did: String,
+    #[serde(rename = "controllerDid")]
+    pub controller_did: String,
+    #[serde(rename = "verificationMethod")]
+    pub verification_method: String,
+    pub purpose: String,
+    #[serde(rename = "requestTimestamp")]
+    pub request_timestamp: DateTime<Utc>,
+    #[serde(rename = "requestNonce")]
+    pub request_nonce: String,
+    pub aud: String,
+    #[serde(rename = "protocolVersion")]
+    pub protocol_version: String,
+    #[serde(rename = "bodyHash", skip_serializing_if = "Option::is_none")]
+    pub body_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RegistrationCredentialQueryRequest {
+    pub challenge: RegistrationCredentialQueryChallenge,
+    #[serde(rename = "controllerDidDocument")]
+    pub controller_did_document: DidDocument,
+    pub proof: DataIntegrityProof,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RegistrationCredentialQueryResponse {
+    #[serde(rename = "resourceDid")]
+    pub resource_did: String,
+    #[serde(rename = "controllerDid")]
+    pub controller_did: String,
+    #[serde(rename = "registrationCredential")]
+    pub registration_credential: Value,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -833,6 +875,66 @@ mod tests {
             }
             assert!(submission.validate_shape().is_err(), "{field} should fail");
         }
+    }
+
+    #[test]
+    fn registration_credential_query_models_use_stable_json_fields() {
+        let resource_did = "did:oan:SKFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
+        let controller_did = "did:oan:AGFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
+        let request = RegistrationCredentialQueryRequest {
+            challenge: RegistrationCredentialQueryChallenge {
+                method: "POST".to_owned(),
+                path: format!(
+                    "/resources/{}/registration-credential",
+                    resource_did.replace(':', "%3A")
+                ),
+                resource_did: resource_did.to_owned(),
+                controller_did: controller_did.to_owned(),
+                verification_method: format!("{controller_did}#key-1"),
+                purpose: PURPOSE_REGISTRATION_CREDENTIAL_QUERY.to_owned(),
+                request_timestamp: Utc::now(),
+                request_nonce: "query-nonce-1".to_owned(),
+                aud: "did:oan:INRG:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+                protocol_version: PROTOCOL_REGISTRATION_CREDENTIAL_QUERY_V1.to_owned(),
+                body_hash: None,
+            },
+            controller_did_document: sample_valid_resource_did_document(controller_did),
+            proof: sample_proof(),
+        };
+
+        let value = serde_json::to_value(&request).unwrap();
+        assert_eq!(value["challenge"]["method"], "POST");
+        assert_eq!(value["challenge"]["resourceDid"], resource_did);
+        assert_eq!(value["challenge"]["controllerDid"], controller_did);
+        assert_eq!(
+            value["challenge"]["verificationMethod"],
+            format!("{controller_did}#key-1")
+        );
+        assert_eq!(
+            value["challenge"]["purpose"],
+            PURPOSE_REGISTRATION_CREDENTIAL_QUERY
+        );
+        assert_eq!(
+            value["challenge"]["protocolVersion"],
+            PROTOCOL_REGISTRATION_CREDENTIAL_QUERY_V1
+        );
+        assert!(value["challenge"].get("bodyHash").is_none());
+        assert_eq!(value["controllerDidDocument"]["id"], controller_did);
+
+        let round_trip: RegistrationCredentialQueryRequest = serde_json::from_value(value).unwrap();
+        assert_eq!(round_trip, request);
+
+        let response = RegistrationCredentialQueryResponse {
+            resource_did: resource_did.to_owned(),
+            controller_did: controller_did.to_owned(),
+            registration_credential: json!({
+                "type": ["VerifiableCredential", "OANResourceRegistrationCredential"]
+            }),
+        };
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(value["resourceDid"], resource_did);
+        assert_eq!(value["controllerDid"], controller_did);
+        assert!(value["registrationCredential"].is_object());
     }
 
     #[test]
