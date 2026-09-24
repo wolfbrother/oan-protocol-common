@@ -36,6 +36,14 @@ impl CryptoSuite {
         }
     }
 
+    /// Canonical profile-v2 spelling used in serialized proofs.
+    pub fn canonical_hash_algorithm(&self) -> &'static str {
+        match self {
+            Self::Ed25519Sha256Legacy | Self::Ed25519Sha256 => "sha256",
+            Self::Sm2Sm3 => "sm3",
+        }
+    }
+
     pub fn verification_method_type(&self) -> &'static str {
         match self {
             Self::Ed25519Sha256Legacy | Self::Ed25519Sha256 => "Ed25519VerificationKey2020",
@@ -68,8 +76,18 @@ impl CryptoSuite {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum SubjectType {
+    AgentInstance,
+    AgentProduct,
+    RootNode,
+    RegistrarNode,
+    DiscoveryNode,
+    CdnNode,
+    VcIssuerNode,
+    TrustIndexerNode,
+    Unspecified,
+    #[serde(skip)]
     Agent,
     AgentService,
     Skill,
@@ -83,6 +101,8 @@ pub enum SubjectType {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceType {
+    AgentInstance,
+    AgentProduct,
     AgentService,
     Skill,
     McpServer,
@@ -90,11 +110,20 @@ pub enum ResourceType {
     InfrastructureNode,
     Organization,
     Developer,
+    RootNode,
+    RegistrarNode,
+    DiscoveryNode,
+    CdnNode,
+    VcIssuerNode,
+    TrustIndexerNode,
+    Unspecified,
 }
 
 impl ResourceType {
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::AgentInstance => "agent_instance",
+            Self::AgentProduct => "agent_product",
             Self::AgentService => "agent_service",
             Self::Skill => "skill",
             Self::McpServer => "mcp_server",
@@ -102,31 +131,13 @@ impl ResourceType {
             Self::InfrastructureNode => "infrastructure_node",
             Self::Organization => "organization",
             Self::Developer => "developer",
-        }
-    }
-
-    pub fn expected_subject_code(&self) -> &'static str {
-        match self {
-            Self::AgentService => "AG",
-            Self::Skill => "SK",
-            Self::McpServer => "MC",
-            Self::ToolApi => "TL",
-            Self::InfrastructureNode => "IN",
-            Self::Organization => "OR",
-            Self::Developer => "DV",
-        }
-    }
-
-    pub fn from_subject_code(value: &str) -> Option<Self> {
-        match value {
-            "AG" => Some(Self::AgentService),
-            "SK" => Some(Self::Skill),
-            "MC" => Some(Self::McpServer),
-            "TL" => Some(Self::ToolApi),
-            "IN" => Some(Self::InfrastructureNode),
-            "OR" => Some(Self::Organization),
-            "DV" => Some(Self::Developer),
-            _ => None,
+            Self::RootNode => "root_node",
+            Self::RegistrarNode => "registrar_node",
+            Self::DiscoveryNode => "discovery_node",
+            Self::CdnNode => "cdn_node",
+            Self::VcIssuerNode => "vc_issuer_node",
+            Self::TrustIndexerNode => "trust_indexer_node",
+            Self::Unspecified => "unspecified",
         }
     }
 }
@@ -357,11 +368,15 @@ pub struct PackageInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OanMetadata {
     #[serde(rename = "subjectType")]
-    pub subject_type: ResourceType,
+    pub subject_type: SubjectType,
     #[serde(rename = "resourceType")]
     pub resource_type: ResourceType,
-    #[serde(rename = "nodeRole", skip_serializing_if = "Option::is_none")]
-    pub node_role: Option<String>,
+    #[serde(
+        rename = "externalIdentifiers",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub external_identifiers: Vec<ExternalIdentifier>,
     #[serde(rename = "identityType", skip_serializing_if = "Option::is_none")]
     pub identity_type: Option<String>,
     #[serde(rename = "controllerDid", skip_serializing_if = "Option::is_none")]
@@ -406,6 +421,8 @@ pub struct DidDocument {
     #[serde(rename = "@context")]
     pub context: Vec<String>,
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<DidController>,
     #[serde(rename = "verificationMethod", default)]
     pub verification_method: Vec<VerificationMethod>,
     #[serde(default)]
@@ -420,8 +437,36 @@ pub struct DidDocument {
     pub capability_invocation: Vec<String>,
     #[serde(default)]
     pub service: Vec<ServiceEndpoint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proof: Option<DataIntegrityProof>,
     #[serde(rename = "oanMetadata", skip_serializing_if = "Option::is_none")]
     pub oan_metadata: Option<OanMetadata>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalIdentifier {
+    pub id: String,
+    #[serde(
+        rename = "resolutionServiceEndpoint",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resolution_service_endpoint: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DidController {
+    Did(String),
+    Dids(Vec<String>),
+}
+
+impl DidController {
+    pub fn contains(&self, did: &str) -> bool {
+        match self {
+            Self::Did(value) => value == did,
+            Self::Dids(values) => values.iter().any(|value| value == did),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -743,6 +788,18 @@ pub enum DidDocumentError {
     ResourceTypeMismatch,
     #[error("did subject code and oan resource type do not match")]
     SubjectCodeResourceTypeMismatch,
+    #[error("did document controller is required")]
+    MissingController,
+    #[error("did document top-level proof is required")]
+    MissingProof,
+    #[error("did document proof is invalid: {0}")]
+    InvalidProof(&'static str),
+    #[error("external identifier list is invalid: {0}")]
+    InvalidExternalIdentifier(&'static str),
+    #[error("subject type and resource type combination is invalid")]
+    InvalidTypeCombination,
+    #[error("oan metadata controllerDid must match the top-level controller")]
+    ControllerDidMismatch,
 }
 
 impl DidDocument {
@@ -771,34 +828,163 @@ impl DidDocument {
 
     pub fn validate_oan_resource(&self) -> Result<(), DidDocumentError> {
         self.validate_mvp()?;
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or(DidDocumentError::MissingController)?;
         let metadata = self
             .oan_metadata
             .as_ref()
             .ok_or(DidDocumentError::MissingOanMetadata)?;
-        if metadata.subject_type != metadata.resource_type {
-            return Err(DidDocumentError::ResourceTypeMismatch);
+        if let Some(controller_did) = metadata.controller_did.as_deref() {
+            if !controller.contains(controller_did) {
+                return Err(DidDocumentError::ControllerDidMismatch);
+            }
         }
-        let parts = self.id.split(':').collect::<Vec<_>>();
-        if parts.len() != 4
-            || parts[0] != "did"
-            || parts[1] != "oan"
-            || parts[2].len() != 4
-            || !parts[2]
-                .chars()
-                .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
-            || parts[3].len() != 32
-            || !parts[3]
-                .chars()
-                .all(|ch| "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".contains(ch))
-        {
-            return Err(DidDocumentError::SubjectCodeResourceTypeMismatch);
+        if !valid_type_combination(&metadata.subject_type, &metadata.resource_type) {
+            return Err(DidDocumentError::InvalidTypeCombination);
         }
-        let subject_code = &parts[2][..2];
-        if subject_code != metadata.resource_type.expected_subject_code() {
-            return Err(DidDocumentError::SubjectCodeResourceTypeMismatch);
-        }
+        let did = oan_did_oan::DidOan::parse(&self.id)
+            .map_err(|_| DidDocumentError::SubjectCodeResourceTypeMismatch)?;
+        let _ = did;
+        let proof = self.proof.as_ref().ok_or(DidDocumentError::MissingProof)?;
+        validate_proof(self, controller, proof)?;
+        validate_external_identifiers(&metadata.external_identifiers)?;
         Ok(())
     }
+}
+
+fn valid_type_combination(subject: &SubjectType, resource: &ResourceType) -> bool {
+    matches!(
+        (subject, resource),
+        (SubjectType::AgentInstance, ResourceType::AgentInstance)
+            | (SubjectType::AgentInstance, ResourceType::AgentService)
+            | (SubjectType::AgentProduct, ResourceType::AgentProduct)
+            | (SubjectType::Organization, ResourceType::Organization)
+            | (SubjectType::Developer, ResourceType::Developer)
+            | (SubjectType::AgentService, ResourceType::AgentService)
+            | (SubjectType::Skill, ResourceType::Skill)
+            | (SubjectType::McpServer, ResourceType::McpServer)
+            | (SubjectType::ToolApi, ResourceType::ToolApi)
+            | (
+                SubjectType::InfrastructureNode,
+                ResourceType::InfrastructureNode
+            )
+            | (SubjectType::InfrastructureNode, ResourceType::RootNode)
+            | (SubjectType::InfrastructureNode, ResourceType::RegistrarNode)
+            | (SubjectType::InfrastructureNode, ResourceType::DiscoveryNode)
+            | (SubjectType::InfrastructureNode, ResourceType::CdnNode)
+            | (SubjectType::InfrastructureNode, ResourceType::VcIssuerNode)
+            | (
+                SubjectType::InfrastructureNode,
+                ResourceType::TrustIndexerNode
+            )
+            | (SubjectType::RootNode, ResourceType::RootNode)
+            | (SubjectType::RegistrarNode, ResourceType::RegistrarNode)
+            | (SubjectType::DiscoveryNode, ResourceType::DiscoveryNode)
+            | (SubjectType::CdnNode, ResourceType::CdnNode)
+            | (SubjectType::VcIssuerNode, ResourceType::VcIssuerNode)
+            | (
+                SubjectType::TrustIndexerNode,
+                ResourceType::TrustIndexerNode
+            )
+            | (SubjectType::Unspecified, ResourceType::Unspecified)
+    )
+}
+
+fn validate_proof(
+    document: &DidDocument,
+    controller: &DidController,
+    proof: &DataIntegrityProof,
+) -> Result<(), DidDocumentError> {
+    if proof.proof_purpose != "assertionMethod" {
+        return Err(DidDocumentError::InvalidProof("proofPurpose"));
+    }
+    let verification_method = proof
+        .verification_method
+        .as_deref()
+        .ok_or(DidDocumentError::InvalidProof("verificationMethod"))?;
+    if proof.creator != verification_method {
+        return Err(DidDocumentError::InvalidProof("creator"));
+    }
+    if !document
+        .assertion_method
+        .iter()
+        .any(|method| method == verification_method)
+    {
+        return Err(DidDocumentError::InvalidProof("assertionMethod"));
+    }
+    let method = document
+        .verification_method
+        .iter()
+        .find(|method| method.id == verification_method)
+        .ok_or(DidDocumentError::InvalidProof(
+            "verificationMethodReference",
+        ))?;
+    if !controller.contains(&method.controller) {
+        return Err(DidDocumentError::InvalidProof("controller"));
+    }
+    if proof.crypto_suite.is_none() {
+        return Err(DidDocumentError::InvalidProof("cryptoSuite"));
+    }
+    if proof.hash_algorithm.is_none() {
+        return Err(DidDocumentError::InvalidProof("hashAlgorithm"));
+    }
+    let suite = proof.crypto_suite.as_ref().expect("checked above");
+    if matches!(suite, CryptoSuite::Ed25519Sha256Legacy) {
+        return Err(DidDocumentError::InvalidProof("legacyCryptoSuite"));
+    }
+    let hash_algorithm = suite.canonical_hash_algorithm();
+    if proof.proof_type != suite.proof_type()
+        || proof.hash_algorithm.as_deref() != Some(hash_algorithm)
+        || method.crypto_suite.as_ref() != Some(suite)
+        || method.method_type != suite.verification_method_type()
+    {
+        return Err(DidDocumentError::InvalidProof("algorithmMismatch"));
+    }
+    Ok(())
+}
+
+fn validate_external_identifiers(values: &[ExternalIdentifier]) -> Result<(), DidDocumentError> {
+    if values.len() > 8 {
+        return Err(DidDocumentError::InvalidExternalIdentifier("maxItems"));
+    }
+    let mut ids = BTreeSet::new();
+    for value in values {
+        if value.id.is_empty()
+            || value.id.len() > 512
+            || value.id.chars().any(|ch| ch.is_control())
+            || value.id.starts_with("did:oan:")
+        {
+            return Err(DidDocumentError::InvalidExternalIdentifier("id"));
+        }
+        if !ids.insert(&value.id) {
+            return Err(DidDocumentError::InvalidExternalIdentifier("duplicate"));
+        }
+        if let Some(endpoint) = &value.resolution_service_endpoint {
+            if endpoint.len() > 1024 {
+                return Err(DidDocumentError::InvalidExternalIdentifier(
+                    "endpointLength",
+                ));
+            }
+            let parsed = url::Url::parse(endpoint)
+                .map_err(|_| DidDocumentError::InvalidExternalIdentifier("endpointUri"))?;
+            if matches!(parsed.scheme(), "file" | "data" | "javascript")
+                || !parsed.username().is_empty()
+                || parsed.password().is_some()
+            {
+                return Err(DidDocumentError::InvalidExternalIdentifier(
+                    "endpointSafety",
+                ));
+            }
+        }
+    }
+    let serialized = serde_json::to_vec(values)
+        .map_err(|_| DidDocumentError::InvalidExternalIdentifier("serialization"))?;
+    if serialized.len() > 8192 {
+        return Err(DidDocumentError::InvalidExternalIdentifier("maxBytes"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -811,12 +997,14 @@ mod tests {
 
     fn sample_oan_resource_document(
         resource_type: ResourceType,
-        subject_type: ResourceType,
+        subject_type: SubjectType,
     ) -> DidDocument {
-        let did = "did:oan:SKLG:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let key_id = format!("{did}#key-1");
         DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: did.to_owned(),
+            controller: Some(DidController::Did(did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: format!("{did}#key-1"),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -830,10 +1018,20 @@ mod tests {
             assertion_method: vec![format!("{did}#key-1")],
             capability_invocation: vec![format!("{did}#key-1")],
             service: vec![],
+            proof: Some(DataIntegrityProof {
+                proof_type: "Ed25519Signature2020".to_owned(),
+                creator: key_id.clone(),
+                created: Utc::now(),
+                proof_purpose: "assertionMethod".to_owned(),
+                proof_value: "fixture".to_owned(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                hash_algorithm: Some("sha256".to_owned()),
+                verification_method: Some(key_id),
+            }),
             oan_metadata: Some(OanMetadata {
                 subject_type,
                 resource_type,
-                node_role: None,
+                external_identifiers: vec![],
                 identity_type: None,
                 controller_did: None,
                 publisher_did: Some("did:oan:ORLG:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
@@ -904,21 +1102,101 @@ mod tests {
     }
 
     #[test]
-    fn resource_type_maps_to_subject_codes() {
-        assert_eq!(ResourceType::AgentService.expected_subject_code(), "AG");
-        assert_eq!(ResourceType::Skill.expected_subject_code(), "SK");
-        assert_eq!(ResourceType::McpServer.expected_subject_code(), "MC");
-        assert_eq!(ResourceType::ToolApi.expected_subject_code(), "TL");
+    fn profile_v2_type_values_are_independent_of_did_code() {
+        assert_eq!(ResourceType::Skill.as_str(), "skill");
+        assert_eq!(ResourceType::RegistrarNode.as_str(), "registrar_node");
+        assert_eq!(SubjectType::AgentInstance, SubjectType::AgentInstance);
+    }
+
+    #[test]
+    fn profile_v2_serialization_has_no_legacy_node_role() {
+        let metadata = OanMetadata {
+            subject_type: SubjectType::Skill,
+            resource_type: ResourceType::Skill,
+            external_identifiers: vec![],
+            identity_type: None,
+            controller_did: None,
+            publisher_did: None,
+            issuer_did: None,
+            ttl: None,
+            resource_description: None,
+            agent_description: None,
+            capability_tags: vec![],
+            authorized_domains: vec![],
+            protocol_bindings: vec![],
+            implementation_links: vec![],
+            credential_requirements: vec![],
+            package_info: None,
+            service_policy: None,
+            network_scope: None,
+            lifecycle_state: None,
+            extra: BTreeMap::new(),
+        };
+        let value = serde_json::to_value(&metadata).unwrap();
+        assert!(value.get("nodeRole").is_none());
+    }
+
+    #[test]
+    fn external_identifier_limits_and_safety_are_enforced() {
+        let mut values = vec![ExternalIdentifier {
+            id: "urn:example:one".to_owned(),
+            resolution_service_endpoint: Some("https://example.org/resolve".to_owned()),
+        }];
+        assert!(validate_external_identifiers(&values).is_ok());
+        values[0].resolution_service_endpoint = Some("file:///secret".to_owned());
         assert_eq!(
-            ResourceType::from_subject_code("SK"),
-            Some(ResourceType::Skill)
+            validate_external_identifiers(&values).unwrap_err(),
+            DidDocumentError::InvalidExternalIdentifier("endpointSafety")
+        );
+        values[0].resolution_service_endpoint = None;
+        values[0].id = "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned();
+        assert_eq!(
+            validate_external_identifiers(&values).unwrap_err(),
+            DidDocumentError::InvalidExternalIdentifier("id")
+        );
+    }
+
+    #[test]
+    fn profile_v2_rejects_legacy_crypto_suite() {
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        document.proof.as_mut().unwrap().crypto_suite = Some(CryptoSuite::Ed25519Sha256Legacy);
+        assert_eq!(
+            document.validate_oan_resource().unwrap_err(),
+            DidDocumentError::InvalidProof("legacyCryptoSuite")
         );
     }
 
     #[test]
     fn validates_oan_resource_document_metadata() {
-        let document = sample_oan_resource_document(ResourceType::Skill, ResourceType::Skill);
+        let document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
 
+        assert_eq!(document.validate_oan_resource(), Ok(()));
+    }
+
+    #[test]
+    fn controller_did_must_match_top_level_controller() {
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        document.oan_metadata.as_mut().unwrap().controller_did =
+            Some("did:oan:QwErT:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo".to_owned());
+        assert_eq!(
+            document.validate_oan_resource().unwrap_err(),
+            DidDocumentError::ControllerDidMismatch
+        );
+
+        document.oan_metadata.as_mut().unwrap().controller_did =
+            Some("did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned());
+        assert_eq!(document.validate_oan_resource(), Ok(()));
+    }
+
+    #[test]
+    fn controller_did_must_be_in_controller_array() {
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        document.controller = Some(DidController::Dids(vec![
+            "did:oan:QwErT:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo".to_owned(),
+            "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned(),
+        ]));
+        document.oan_metadata.as_mut().unwrap().controller_did =
+            Some("did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned());
         assert!(document.validate_oan_resource().is_ok());
     }
 
@@ -926,37 +1204,51 @@ mod tests {
     fn validates_all_primary_product_oan_resource_documents() {
         let cases = [
             (
-                "did:oan:AGFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+                "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
                 ResourceType::AgentService,
             ),
             (
-                "did:oan:SKLG:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu",
+                "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu",
                 ResourceType::Skill,
             ),
             (
-                "did:oan:MCLG:3NqV7Yp5TxRb9Wc2Md6Za4Ef8GhKsJuL",
+                "did:oan:K7mQ9:3NqV7Yp5TxRb9Wc2Md6Za4Ef8GhKsJuL",
                 ResourceType::McpServer,
             ),
             (
-                "did:oan:TLFI:7BcD3Fg5HjK8Mn9Pq2Rs4Tv6WxYzA1Ee",
+                "did:oan:K7mQ9:7BcD3Fg5HjK8Mn9Pq2Rs4Tv6WxYzA1Ee",
                 ResourceType::ToolApi,
             ),
         ];
 
         for (did, resource_type) in cases {
-            let mut document =
-                sample_oan_resource_document(resource_type.clone(), resource_type.clone());
+            let subject_type = match resource_type {
+                ResourceType::AgentService => SubjectType::AgentService,
+                ResourceType::Skill => SubjectType::Skill,
+                ResourceType::McpServer => SubjectType::McpServer,
+                ResourceType::ToolApi => SubjectType::ToolApi,
+                _ => SubjectType::Unspecified,
+            };
+            let mut document = sample_oan_resource_document(resource_type.clone(), subject_type);
             document.id = did.to_owned();
             for method in &mut document.verification_method {
                 method.id = format!("{did}#key-1");
-                method.controller = did.to_owned();
+                method.controller = "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo".to_owned();
             }
+            document.controller = Some(DidController::Did(
+                "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo".to_owned(),
+            ));
             document.authentication = vec![format!("{did}#key-1")];
             document.assertion_method = vec![format!("{did}#key-1")];
+            if let Some(proof) = &mut document.proof {
+                proof.creator = format!("{did}#key-1");
+                proof.verification_method = Some(format!("{did}#key-1"));
+            }
 
+            let result = document.validate_oan_resource();
             assert!(
-                document.validate_oan_resource().is_ok(),
-                "{did} should validate as {}",
+                result.is_ok(),
+                "{did} should validate as {}: {result:?}",
                 resource_type.as_str()
             );
         }
@@ -964,7 +1256,7 @@ mod tests {
 
     #[test]
     fn rejects_oan_resource_document_without_oan_metadata() {
-        let mut document = sample_oan_resource_document(ResourceType::Skill, ResourceType::Skill);
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.oan_metadata = None;
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
@@ -974,17 +1266,17 @@ mod tests {
 
     #[test]
     fn rejects_oan_resource_document_type_mismatch() {
-        let document = sample_oan_resource_document(ResourceType::Skill, ResourceType::McpServer);
+        let document = sample_oan_resource_document(ResourceType::Skill, SubjectType::McpServer);
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::ResourceTypeMismatch
+            DidDocumentError::InvalidTypeCombination
         );
     }
 
     #[test]
     fn rejects_oan_resource_document_subject_code_mismatch() {
-        let mut document = sample_oan_resource_document(ResourceType::Skill, ResourceType::Skill);
-        document.id = "did:oan:MCLG:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        document.id = "did:oan:K7mQ:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
             DidDocumentError::SubjectCodeResourceTypeMismatch
@@ -1002,7 +1294,7 @@ mod tests {
 
         for invalid_id in invalid_ids {
             let mut document =
-                sample_oan_resource_document(ResourceType::Skill, ResourceType::Skill);
+                sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
             document.id = invalid_id.to_owned();
             assert_eq!(
                 document.validate_oan_resource().unwrap_err(),
@@ -1013,7 +1305,7 @@ mod tests {
 
     #[test]
     fn rejects_oan_resource_document_missing_core_verification() {
-        let mut document = sample_oan_resource_document(ResourceType::Skill, ResourceType::Skill);
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.authentication.clear();
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
@@ -1023,7 +1315,7 @@ mod tests {
 
     #[test]
     fn oan_metadata_serializes_expected_resource_shape() {
-        let document = sample_oan_resource_document(ResourceType::Skill, ResourceType::Skill);
+        let document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         let value = serde_json::to_value(&document).unwrap();
         assert_eq!(value["oanMetadata"]["subjectType"], "skill");
         assert_eq!(value["oanMetadata"]["resourceType"], "skill");

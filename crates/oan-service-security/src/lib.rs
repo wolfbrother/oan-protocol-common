@@ -863,6 +863,7 @@ mod tests {
         let did_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: did.to_owned(),
+            controller: Some(oan_core::DidController::Did(did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -892,10 +893,11 @@ mod tests {
                 server_type: None,
                 port: None,
             }],
+            proof: None,
             oan_metadata: Some(OanMetadata {
-                subject_type: ResourceType::AgentService,
+                subject_type: oan_core::SubjectType::AgentService,
                 resource_type: ResourceType::AgentService,
-                node_role: None,
+                external_identifiers: vec![],
                 identity_type: Some("service-agent".to_owned()),
                 controller_did: None,
                 publisher_did: None,
@@ -993,6 +995,7 @@ mod tests {
         let controller_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: controller_did.to_owned(),
+            controller: Some(oan_core::DidController::Did(controller_did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -1006,6 +1009,7 @@ mod tests {
             assertion_method: vec![method_id.clone()],
             capability_invocation: vec![method_id.clone()],
             service: vec![],
+            proof: None,
             oan_metadata: None,
         };
         let challenge =
@@ -1071,6 +1075,7 @@ mod tests {
         let controller_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: controller_did.to_owned(),
+            controller: Some(oan_core::DidController::Did(controller_did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -1084,6 +1089,7 @@ mod tests {
             assertion_method: vec![method_id.clone()],
             capability_invocation: vec![method_id.clone()],
             service: vec![],
+            proof: None,
             oan_metadata: None,
         };
         let challenge =
@@ -1139,6 +1145,7 @@ mod tests {
         let did_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: did.to_owned(),
+            controller: Some(oan_core::DidController::Did(did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -1157,6 +1164,7 @@ mod tests {
             assertion_method: vec![method_id.clone()],
             capability_invocation: vec![method_id],
             service: vec![],
+            proof: None,
             oan_metadata: None,
         };
 
@@ -1187,6 +1195,7 @@ mod tests {
         let controller_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: controller_did.to_owned(),
+            controller: Some(oan_core::DidController::Did(controller_did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -1200,6 +1209,7 @@ mod tests {
             assertion_method: vec![method_id.clone()],
             capability_invocation: vec![method_id.clone()],
             service: vec![],
+            proof: None,
             oan_metadata: None,
         };
         let challenge =
@@ -1259,6 +1269,7 @@ mod tests {
         let controller_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: controller_did.to_owned(),
+            controller: Some(oan_core::DidController::Did(controller_did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -1272,6 +1283,7 @@ mod tests {
             assertion_method: vec![method_id.clone()],
             capability_invocation: vec![method_id.clone()],
             service: vec![],
+            proof: None,
             oan_metadata: None,
         };
         let mut challenge =
@@ -1331,6 +1343,7 @@ mod tests {
         let controller_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: controller_did.to_owned(),
+            controller: Some(oan_core::DidController::Did(controller_did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -1344,6 +1357,7 @@ mod tests {
             assertion_method: vec![method_id.clone()],
             capability_invocation: vec![method_id.clone()],
             service: vec![],
+            proof: None,
             oan_metadata: None,
         };
         let now = Utc::now();
@@ -1414,6 +1428,7 @@ mod tests {
         let did_document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: did.to_owned(),
+            controller: Some(oan_core::DidController::Did(did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: method_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -1427,6 +1442,7 @@ mod tests {
             assertion_method: vec![method_id.clone()],
             capability_invocation: vec![method_id.clone()],
             service: vec![],
+            proof: None,
             oan_metadata: None,
         };
         let payload =

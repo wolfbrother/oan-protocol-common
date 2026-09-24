@@ -10,7 +10,7 @@ use ed25519_dalek::{
     Signature as Ed25519Signature, Signer as _, SigningKey as Ed25519SigningKey, Verifier as _,
     VerifyingKey as Ed25519VerifyingKey,
 };
-use oan_core::{CryptoSuite, DataIntegrityProof, VerificationMethod};
+use oan_core::{CryptoSuite, DataIntegrityProof, DidDocument, VerificationMethod};
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
 use sha2::{Digest as ShaDigest, Sha256};
@@ -363,6 +363,22 @@ pub fn signature_input<T: Serialize>(
     }
 }
 
+pub fn did_document_signature_input(
+    document: &DidDocument,
+    suite: CryptoSuite,
+) -> Result<Vec<u8>, CryptoError> {
+    let mut document_without_proof = document.clone();
+    document_without_proof.proof = None;
+    signature_input(suite, &document_without_proof)
+}
+
+pub fn hash_did_document_with_proof(
+    document: &DidDocument,
+    suite: CryptoSuite,
+) -> Result<String, CryptoError> {
+    hash_json_with_suite(suite, document)
+}
+
 pub fn public_key_multibase(verifying_key: &VerifyingKey) -> String {
     let bytes = match verifying_key {
         VerifyingKey::Ed25519 { key, .. } => key.as_bytes().to_vec(),
@@ -445,7 +461,7 @@ pub fn build_data_integrity_proof<T: Serialize>(
         proof_purpose: "assertionMethod".to_owned(),
         proof_value: sign_bytes(signing_key, &input)?,
         crypto_suite: Some(suite.clone()),
-        hash_algorithm: Some(suite.hash_algorithm().to_owned()),
+        hash_algorithm: Some(suite.canonical_hash_algorithm().to_owned()),
         verification_method: Some(verification_method),
     })
 }
@@ -587,6 +603,55 @@ mod tests {
         .unwrap();
 
         assert_eq!(proof.crypto_suite(), Some(CryptoSuite::Ed25519Sha256));
+        assert_eq!(proof.hash_algorithm.as_deref(), Some("sha256"));
         verify_payload_with_proof(&payload, &proof, &keypair.verifying_key).unwrap();
+    }
+
+    #[test]
+    fn did_document_signature_excludes_proof_but_final_hash_includes_it() {
+        let document = DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            controller: Some(oan_core::DidController::Did(
+                "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo".to_owned(),
+            )),
+            verification_method: vec![],
+            authentication: vec![],
+            assertion_method: vec![],
+            capability_invocation: vec![],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let without_proof =
+            did_document_signature_input(&document, CryptoSuite::Ed25519Sha256).unwrap();
+        assert_eq!(
+            String::from_utf8(without_proof.clone()).unwrap(),
+            r#"{"@context":["https://www.w3.org/ns/did/v1"],"assertionMethod":[],"authentication":[],"controller":"did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo","id":"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz","service":[],"verificationMethod":[]}"#
+        );
+        let mut with_proof = document.clone();
+        with_proof.proof = Some(DataIntegrityProof {
+            proof_type: "Ed25519Signature2020".to_owned(),
+            creator: "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo#key-1".to_owned(),
+            created: chrono::Utc::now(),
+            proof_purpose: "assertionMethod".to_owned(),
+            proof_value: "fixture-proof".to_owned(),
+            crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+            hash_algorithm: Some("sha256".to_owned()),
+            verification_method: Some(
+                "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo#key-1".to_owned(),
+            ),
+        });
+        let with_proof_input =
+            did_document_signature_input(&with_proof, CryptoSuite::Ed25519Sha256).unwrap();
+        assert_eq!(without_proof, with_proof_input);
+        assert_ne!(
+            hash_did_document_with_proof(&document, CryptoSuite::Ed25519Sha256).unwrap(),
+            hash_did_document_with_proof(&with_proof, CryptoSuite::Ed25519Sha256).unwrap()
+        );
+        assert_eq!(
+            hash_did_document_with_proof(&document, CryptoSuite::Ed25519Sha256).unwrap(),
+            "ea22ffc510474c57eea32d8835c9335defa6bb9b4e3226046539027de61ee5cf"
+        );
     }
 }

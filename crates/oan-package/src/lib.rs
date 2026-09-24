@@ -6,7 +6,9 @@
 //! Verified package, manifest, and metadata models.
 
 use chrono::{DateTime, Utc};
-use oan_core::{CryptoSuite, DataIntegrityProof, DidDocument, ResourceType, ServiceEndpoint};
+use oan_core::{
+    CryptoSuite, DataIntegrityProof, DidDocument, ResourceType, ServiceEndpoint, SubjectType,
+};
 use oan_crypto::{hash_json_with_suite, CryptoError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -34,7 +36,7 @@ pub struct ResourceMetadata {
     #[serde(rename = "resourceType")]
     pub resource_type: ResourceType,
     #[serde(rename = "subjectType")]
-    pub subject_type: ResourceType,
+    pub subject_type: SubjectType,
     #[serde(rename = "publisherDid", skip_serializing_if = "Option::is_none")]
     pub publisher_did: Option<String>,
     #[serde(rename = "subjectDid", skip_serializing_if = "Option::is_none")]
@@ -183,7 +185,7 @@ impl ResourcePackage {
 
     pub fn verify_resource_type_consistency(&self) -> Result<(), PackageError> {
         if self.resource_type == self.metadata.resource_type
-            && self.resource_type == self.metadata.subject_type
+            && resource_type_matches_subject(&self.resource_type, &self.metadata.subject_type)
         {
             Ok(())
         } else {
@@ -235,6 +237,35 @@ impl ResourcePackage {
     }
 }
 
+fn resource_type_matches_subject(resource_type: &ResourceType, subject_type: &SubjectType) -> bool {
+    matches!(
+        (resource_type, subject_type),
+        (ResourceType::AgentInstance, SubjectType::AgentInstance)
+            | (ResourceType::AgentProduct, SubjectType::AgentProduct)
+            | (ResourceType::AgentService, SubjectType::AgentService)
+            | (ResourceType::AgentService, SubjectType::AgentInstance)
+            | (ResourceType::Skill, SubjectType::Skill)
+            | (ResourceType::McpServer, SubjectType::McpServer)
+            | (ResourceType::ToolApi, SubjectType::ToolApi)
+            | (ResourceType::Organization, SubjectType::Organization)
+            | (ResourceType::Developer, SubjectType::Developer)
+            | (
+                ResourceType::InfrastructureNode,
+                SubjectType::InfrastructureNode
+            )
+            | (ResourceType::RootNode, SubjectType::RootNode)
+            | (ResourceType::RegistrarNode, SubjectType::RegistrarNode)
+            | (ResourceType::DiscoveryNode, SubjectType::DiscoveryNode)
+            | (ResourceType::CdnNode, SubjectType::CdnNode)
+            | (ResourceType::VcIssuerNode, SubjectType::VcIssuerNode)
+            | (
+                ResourceType::TrustIndexerNode,
+                SubjectType::TrustIndexerNode
+            )
+            | (ResourceType::Unspecified, SubjectType::Unspecified)
+    )
+}
+
 pub fn hash_resource_metadata_with_suite(
     suite: CryptoSuite,
     metadata: &ResourceMetadata,
@@ -252,7 +283,7 @@ fn hash_matches(expected: &str, algorithm: &str, actual: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oan_core::{DidDocument, OanMetadata, ResourceType};
+    use oan_core::{DidController, DidDocument, OanMetadata, ResourceType, SubjectType};
 
     #[test]
     fn resource_package_verifies_root_claim_binding() {
@@ -264,7 +295,7 @@ mod tests {
     }
 
     fn sample_resource_package() -> ResourcePackage {
-        let resource_did = "did:oan:SKLG:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let resource_did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let mut package = ResourcePackage {
             package_version: "1.0.0".to_owned(),
             resource_did: resource_did.to_owned(),
@@ -272,15 +303,17 @@ mod tests {
             did_document: DidDocument {
                 context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
                 id: resource_did.to_owned(),
+                controller: Some(DidController::Did(resource_did.to_owned())),
                 verification_method: vec![],
                 authentication: vec![],
                 assertion_method: vec![],
                 capability_invocation: vec![],
                 service: vec![],
+                proof: None,
                 oan_metadata: Some(OanMetadata {
-                    subject_type: ResourceType::Skill,
+                    subject_type: SubjectType::Skill,
                     resource_type: ResourceType::Skill,
-                    node_role: None,
+                    external_identifiers: vec![],
                     identity_type: None,
                     controller_did: None,
                     publisher_did: Some("did:oan:ORLG:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
@@ -307,7 +340,7 @@ mod tests {
             metadata: ResourceMetadata {
                 resource_did: resource_did.to_owned(),
                 resource_type: ResourceType::Skill,
-                subject_type: ResourceType::Skill,
+                subject_type: SubjectType::Skill,
                 publisher_did: Some("did:oan:ORLG:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
                 subject_did: None,
                 name: "Contract Review Skill".to_owned(),
@@ -472,7 +505,7 @@ mod tests {
     #[test]
     fn resource_package_rejects_metadata_resource_type_mismatch() {
         let mut package = sample_resource_package();
-        package.metadata.subject_type = ResourceType::McpServer;
+        package.metadata.subject_type = SubjectType::McpServer;
 
         assert!(matches!(
             package.verify_resource_type_consistency(),

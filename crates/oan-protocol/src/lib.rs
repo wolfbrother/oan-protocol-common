@@ -248,14 +248,22 @@ pub struct ResourceRegistrationSubmission {
 impl ResourceRegistrationSubmission {
     pub fn validate_shape(&self) -> Result<(), String> {
         let did = DidOan::parse(&self.resource_did).map_err(|err| err.to_string())?;
-        did.validate_resource_type(self.resource_type.as_str())
-            .map_err(|err| err.to_string())?;
+        let _ = did;
         if self.did_document.id != self.resource_did {
             return Err("did_document_id_mismatch".to_owned());
         }
         self.did_document
             .validate_oan_resource()
             .map_err(|err| err.to_string())?;
+        if self
+            .did_document
+            .oan_metadata
+            .as_ref()
+            .map(|metadata| metadata.resource_type != self.resource_type)
+            .unwrap_or(true)
+        {
+            return Err("resource_type_mismatch".to_owned());
+        }
         if self.package_version.trim().is_empty() {
             return Err("empty_package_version".to_owned());
         }
@@ -548,14 +556,14 @@ mod tests {
     fn sample_proof() -> DataIntegrityProof {
         DataIntegrityProof {
             proof_type: "Ed25519Signature2020".to_owned(),
-            creator: "did:oan:INRG:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
+            creator: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
             created: Utc::now(),
             proof_purpose: "assertionMethod".to_owned(),
             proof_value: "sig".to_owned(),
             crypto_suite: None,
             hash_algorithm: None,
             verification_method: Some(
-                "did:oan:INRG:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
+                "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
             ),
         }
     }
@@ -565,6 +573,7 @@ mod tests {
         DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: did.to_owned(),
+            controller: Some(oan_core::DidController::Did(did.to_owned())),
             verification_method: vec![oan_core::VerificationMethod {
                 id: key_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -576,12 +585,22 @@ mod tests {
             }],
             authentication: vec![key_id.clone()],
             assertion_method: vec![key_id.clone()],
-            capability_invocation: vec![key_id],
+            capability_invocation: vec![key_id.clone()],
             service: vec![],
+            proof: Some(DataIntegrityProof {
+                proof_type: "Ed25519Signature2020".to_owned(),
+                creator: key_id.clone(),
+                created: Utc::now(),
+                proof_purpose: "assertionMethod".to_owned(),
+                proof_value: "fixture".to_owned(),
+                crypto_suite: Some(oan_core::CryptoSuite::Ed25519Sha256),
+                hash_algorithm: Some("sha256".to_owned()),
+                verification_method: Some(key_id),
+            }),
             oan_metadata: Some(oan_core::OanMetadata {
-                subject_type: oan_core::ResourceType::Skill,
+                subject_type: oan_core::SubjectType::Skill,
                 resource_type: oan_core::ResourceType::Skill,
-                node_role: None,
+                external_identifiers: vec![],
                 identity_type: None,
                 controller_did: None,
                 publisher_did: Some("did:oan:ORLG:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
@@ -609,14 +628,14 @@ mod tests {
     }
 
     fn sample_resource_submission() -> ResourceRegistrationSubmission {
-        let resource_did = "did:oan:SKFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
+        let resource_did = "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
         let did_document_hash = "sha256:doc";
         let challenge = DidControlChallenge {
             challenge_id: "challenge-1".to_owned(),
             draft_id: "draft-1".to_owned(),
             subject_did: resource_did.to_owned(),
             did_document_hash: did_document_hash.to_owned(),
-            registrar_did: "did:oan:INRG:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            registrar_did: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
             purpose: PURPOSE_RESOURCE_REGISTRATION.to_owned(),
             verification_method: format!("{resource_did}#key-1"),
             nonce: "nonce-1".to_owned(),
@@ -686,7 +705,7 @@ mod tests {
         assert_eq!(round_trip, query);
 
         let response = ResourceDiscoveryResponse {
-            discovery_did: "did:oan:INDS:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            discovery_did: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
             candidates: vec![ResourceDiscoveryCandidate {
                 resource_did: "did:oan:SKLG:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned(),
                 resource_type: oan_core::ResourceType::Skill,
@@ -699,7 +718,7 @@ mod tests {
                 protocol_bindings: vec![],
                 package_info: Some(json!({"packageHash": "sha256:pkg"})),
                 root_proof: Some(
-                    json!({"rootDid": "did:oan:INRT:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz"}),
+                    json!({"rootDid": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz"}),
                 ),
             }],
             created_at: Utc::now(),
@@ -791,20 +810,20 @@ mod tests {
         let challenge = DidControlChallenge {
             challenge_id: "challenge-1".to_owned(),
             draft_id: "draft-1".to_owned(),
-            subject_did: "did:oan:TLFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            subject_did: "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
             did_document_hash: "sha256:doc".to_owned(),
-            registrar_did: "did:oan:INRG:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            registrar_did: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
             purpose: PURPOSE_RESOURCE_REGISTRATION.to_owned(),
-            verification_method: "did:oan:TLFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
+            verification_method: "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
             nonce: "nonce-1".to_owned(),
             issued_at: Utc::now(),
             expires_at: Utc::now(),
         };
         let submission = ResourceRegistrationSubmission {
-            resource_did: "did:oan:TLFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            resource_did: "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
             resource_type: oan_core::ResourceType::ToolApi,
             did_document: sample_valid_resource_did_document(
-                "did:oan:TLFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+                "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
             ),
             did_document_hash: "sha256:doc".to_owned(),
             metadata: json!({"resourceType": "tool_api"}),
@@ -818,7 +837,7 @@ mod tests {
                 proof: sample_proof(),
                 verified_at: Some(Utc::now()),
                 verified_verification_method: Some(
-                    "did:oan:TLFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
+                    "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
                 ),
                 proof_hash: Some("proof-hash".to_owned()),
             },
@@ -827,7 +846,7 @@ mod tests {
         let value = serde_json::to_value(&submission).unwrap();
         assert_eq!(
             value["resourceDid"],
-            "did:oan:TLFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz"
+            "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz"
         );
         assert_eq!(value["resourceType"], "tool_api");
         assert_eq!(value["packageVersion"], "1.0.0");
@@ -851,7 +870,7 @@ mod tests {
     #[test]
     fn resource_registration_submission_rejects_did_document_id_mismatch() {
         let mut submission = sample_resource_submission();
-        submission.did_document.id = "did:oan:MCLG:3NqV7Yp5TxRb9Wc2Md6Za4Ef8GhKsJuL".to_owned();
+        submission.did_document.id = "did:oan:P9aBc:3NqV7Yp5TxRb9Wc2Md6Za4Ef8GhKsJuL".to_owned();
 
         assert_eq!(
             submission.validate_shape().unwrap_err(),
@@ -906,20 +925,20 @@ mod tests {
 
         assert_eq!(
             submission.validate_shape().unwrap_err(),
-            "oan subject type and resource type must match for discoverable resources"
+            "subject type and resource type combination is invalid"
         );
     }
 
     #[test]
     fn resource_registration_submission_rejects_unknown_did_subject_code() {
         let mut submission = sample_resource_submission();
-        submission.resource_did = "did:oan:ZZFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned();
+        submission.resource_did = "did:oan:K7mQ:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned();
         submission.did_document.id = submission.resource_did.clone();
         submission.subject_control_proof.challenge.subject_did = submission.resource_did.clone();
 
         assert_eq!(
             submission.validate_shape().unwrap_err(),
-            "unsupported subject code"
+            "registrar code must be exactly 5 case-sensitive Base58 characters"
         );
     }
 
@@ -928,7 +947,7 @@ mod tests {
         let cases = [
             (
                 "subject_did",
-                "did:oan:AGFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+                "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
             ),
             ("did_document_hash", "sha256:other-doc"),
             ("purpose", PURPOSE_VERIFY_AND_PUBLISH),
@@ -952,8 +971,8 @@ mod tests {
 
     #[test]
     fn registration_credential_query_models_use_stable_json_fields() {
-        let resource_did = "did:oan:SKFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
-        let controller_did = "did:oan:AGFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
+        let resource_did = "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
+        let controller_did = "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
         let request = RegistrationCredentialQueryRequest {
             challenge: RegistrationCredentialQueryChallenge {
                 method: "POST".to_owned(),
@@ -967,7 +986,7 @@ mod tests {
                 purpose: PURPOSE_REGISTRATION_CREDENTIAL_QUERY.to_owned(),
                 request_timestamp: Utc::now(),
                 request_nonce: "query-nonce-1".to_owned(),
-                aud: "did:oan:INRG:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+                aud: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
                 protocol_version: PROTOCOL_REGISTRATION_CREDENTIAL_QUERY_V1.to_owned(),
                 body_hash: None,
             },
@@ -1014,13 +1033,13 @@ mod tests {
     fn resource_root_discovery_notification_serializes_version_and_hashes() {
         let notification = ResourceRootDiscoveryBatchNotification {
             notification_batch_id: "batch-1".to_owned(),
-            root_did: "did:oan:INRT:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
-            target_discovery_did: "did:oan:INDS:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            root_did: "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+            target_discovery_did: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
             authorized_domains: vec!["legal".to_owned()],
             sequence_from: 1,
             sequence_to: 1,
             items: vec![ResourceRootDiscoveryNotificationItem {
-                resource_did: "did:oan:MCLG:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
+                resource_did: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned(),
                 resource_type: oan_core::ResourceType::McpServer,
                 operation: "publish".to_owned(),
                 package_version: "2026-06".to_owned(),
