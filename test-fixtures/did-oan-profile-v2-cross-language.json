@@ -1,0 +1,175 @@
+{
+  "did": {
+    "value": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+    "routingCode": "K7mQ9",
+    "suffixCode": "7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz"
+  },
+  "didCases": [
+    {
+      "id": "resource-did",
+      "did": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+      "expected": "valid",
+      "routingCode": "K7mQ9",
+      "suffixCode": "7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz"
+    },
+    {
+      "id": "infrastructure-did",
+      "did": "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo",
+      "expected": "valid",
+      "routingCode": "P9aBc",
+      "suffixCode": "2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo"
+    },
+    {
+      "id": "root-did",
+      "did": "did:oan:R8tZu:9AbCdEfGhJkLmNoPqRsTuVwXyZaBcDeF",
+      "expected": "valid",
+      "routingCode": "R8tZu",
+      "suffixCode": "9AbCdEfGhJkLmNoPqRsTuVwXyZaBcDeF"
+    },
+    {
+      "id": "case-sensitive-routing-code",
+      "did": "did:oan:k7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+      "expected": "valid",
+      "routingCode": "k7mQ9",
+      "suffixCode": "7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz"
+    },
+    {
+      "id": "legacy-semantic-code",
+      "did": "did:oan:SKFI:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+      "expected": "invalid",
+      "error": "InvalidRoutingCode"
+    },
+    {
+      "id": "routing-code-too-short",
+      "did": "did:oan:K7mQ:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+      "expected": "invalid",
+      "error": "InvalidRoutingCode"
+    },
+    {
+      "id": "routing-code-too-long",
+      "did": "did:oan:K7mQ90:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+      "expected": "invalid",
+      "error": "InvalidRoutingCode"
+    },
+    {
+      "id": "routing-code-invalid-base58",
+      "did": "did:oan:K7mQ0:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+      "expected": "invalid",
+      "error": "InvalidRoutingCode"
+    },
+    {
+      "id": "suffix-code-too-short",
+      "did": "did:oan:K7mQ9:short",
+      "expected": "invalid",
+      "error": "InvalidSuffixCode"
+    },
+    {
+      "id": "suffix-code-invalid-base58",
+      "did": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgN0",
+      "expected": "invalid",
+      "error": "InvalidSuffixCode"
+    },
+    {
+      "id": "wrong-method",
+      "did": "did:ans:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+      "expected": "invalid",
+      "error": "InvalidPrefix"
+    },
+    {
+      "id": "extra-part",
+      "did": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz:extra",
+      "expected": "invalid",
+      "error": "InvalidPartCount"
+    }
+  ],
+  "canonicalJsonCase": {
+    "value": {
+      "z": null,
+      "a": [
+        "智",
+        true,
+        {
+          "B": 2,
+          "b": 1
+        }
+      ],
+      "m": "Aa"
+    },
+    "canonical": "{\"a\":[\"智\",true,{\"B\":2,\"b\":1}],\"m\":\"Aa\",\"z\":null}"
+  },
+  "documentWithoutProof": {
+    "@context": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/oan/v1"
+    ],
+    "id": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+    "controller": "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo",
+    "verificationMethod": [
+      {
+        "id": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1",
+        "type": "Ed25519VerificationKey2020",
+        "controller": "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo",
+        "cryptoSuite": "ed25519-sha256",
+        "publicKeyMultibase": "z6Mkh8Example"
+      }
+    ],
+    "authentication": [
+      "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1"
+    ],
+    "assertionMethod": [
+      "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1"
+    ],
+    "capabilityInvocation": [
+      "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1"
+    ],
+    "service": [
+      {
+        "id": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#manifest",
+        "type": "OANSkillManifest",
+        "serviceEndpoint": "https://example.org/skill.json"
+      }
+    ],
+    "oanMetadata": {
+      "subjectType": "skill",
+      "resourceType": "skill",
+      "externalIdentifiers": [
+        {
+          "id": "urn:example:skill:contract-review",
+          "resolutionServiceEndpoint": "https://resolver.example.org/ext/contract-review"
+        }
+      ],
+      "resourceDescription": {
+        "name": "Contract Review Skill",
+        "description": "Review contracts.",
+        "capabilityTags": [
+          "legal.contract.review"
+        ]
+      },
+      "capabilityTags": [
+        "legal.contract.review"
+      ],
+      "authorizedDomains": [
+        "legal"
+      ],
+      "packageInfo": {
+        "manifestUrl": "https://example.org/skill.json",
+        "packageHash": "sha256:pkg",
+        "metadataHash": "sha256:meta"
+      }
+    }
+  },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "creator": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1",
+    "created": "2026-09-25T00:00:00Z",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "fixture-proof-value",
+    "cryptoSuite": "ed25519-sha256",
+    "hashAlgorithm": "sha256",
+    "verificationMethod": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1"
+  },
+  "signatureInputCanonical": "{\"@context\":[\"https://www.w3.org/ns/did/v1\",\"https://w3id.org/oan/v1\"],\"assertionMethod\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"authentication\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"capabilityInvocation\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"controller\":\"did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo\",\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz\",\"oanMetadata\":{\"authorizedDomains\":[\"legal\"],\"capabilityTags\":[\"legal.contract.review\"],\"externalIdentifiers\":[{\"id\":\"urn:example:skill:contract-review\",\"resolutionServiceEndpoint\":\"https://resolver.example.org/ext/contract-review\"}],\"packageInfo\":{\"manifestUrl\":\"https://example.org/skill.json\",\"metadataHash\":\"sha256:meta\",\"packageHash\":\"sha256:pkg\"},\"resourceDescription\":{\"capabilityTags\":[\"legal.contract.review\"],\"description\":\"Review contracts.\",\"name\":\"Contract Review Skill\"},\"resourceType\":\"skill\",\"subjectType\":\"skill\"},\"service\":[{\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#manifest\",\"serviceEndpoint\":\"https://example.org/skill.json\",\"type\":\"OANSkillManifest\"}],\"verificationMethod\":[{\"controller\":\"did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo\",\"cryptoSuite\":\"ed25519-sha256\",\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\",\"publicKeyMultibase\":\"z6Mkh8Example\",\"type\":\"Ed25519VerificationKey2020\"}]}",
+  "completeDocumentHashSha256": "89b4c0b0c62b31c783719a43e049e70b4dfc6db5a2c73ce7096d49891725eec4",
+  "proofMutationHashSha256": "8446284155f251b3c9fd0b86e1c64de2700cc14ca91b5f74e0c275a9ee5bedcd",
+  "externalIdentifierMutationHashSha256": "ed9eb7439ab7328491d2f249e5d6d7d2da40812ef01f267feb11d68429bca483"
+}

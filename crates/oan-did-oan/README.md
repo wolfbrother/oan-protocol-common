@@ -11,8 +11,12 @@ Email: jlxufly@gmail.com
 The canonical identifier form is:
 
 ```text
-did:oan:<semantic-code>:<32-char-base58-suffix>
+did:oan:<routing-code>:<suffix-code>
 ```
 
-The suffix is stable identifier material. It does not encode key material,
-cryptographic suite, service endpoint, package version, or resource metadata.
+`routing-code` is exactly 5 case-sensitive Base58 characters and records the
+direct upstream identifier prefix used when the DID was created. `suffix-code`
+is exactly 32 case-sensitive Base58 characters and provides the stable
+identifier material. Neither field encodes key material, cryptographic suite,
+service endpoint, package version, resource metadata, resource type, trust
+state, or authorization domain.

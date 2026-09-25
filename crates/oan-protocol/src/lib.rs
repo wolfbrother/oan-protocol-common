@@ -603,7 +603,7 @@ mod tests {
                 external_identifiers: vec![],
                 identity_type: None,
                 controller_did: None,
-                publisher_did: Some("did:oan:ORLG:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
+                publisher_did: Some("did:oan:P9aBc:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
                 issuer_did: None,
                 ttl: None,
                 resource_description: Some(oan_core::ResourceDescription {
@@ -930,7 +930,7 @@ mod tests {
     }
 
     #[test]
-    fn resource_registration_submission_rejects_unknown_did_subject_code() {
+    fn resource_registration_submission_rejects_invalid_routing_code() {
         let mut submission = sample_resource_submission();
         submission.resource_did = "did:oan:K7mQ:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz".to_owned();
         submission.did_document.id = submission.resource_did.clone();
@@ -938,7 +938,7 @@ mod tests {
 
         assert_eq!(
             submission.validate_shape().unwrap_err(),
-            "registrar code must be exactly 5 case-sensitive Base58 characters"
+            "routing-code must be exactly 5 case-sensitive Base58 characters"
         );
     }
 

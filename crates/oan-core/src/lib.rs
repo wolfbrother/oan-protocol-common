@@ -154,17 +154,6 @@ pub enum NodeRole {
 }
 
 impl NodeRole {
-    pub fn semantic_code(&self) -> &'static str {
-        match self {
-            Self::Root => "INRT",
-            Self::Registrar => "INRG",
-            Self::Discovery => "INDS",
-            Self::ServiceAgent => "AGDM",
-            Self::UserAgent => "AGUS",
-            Self::TestAgent => "AGTS",
-        }
-    }
-
     pub fn subject_type(&self) -> SubjectType {
         match self {
             Self::ServiceAgent | Self::UserAgent | Self::TestAgent => SubjectType::Agent,
@@ -786,8 +775,8 @@ pub enum DidDocumentError {
     MissingOanMetadata,
     #[error("oan subject type and resource type must match for discoverable resources")]
     ResourceTypeMismatch,
-    #[error("did subject code and oan resource type do not match")]
-    SubjectCodeResourceTypeMismatch,
+    #[error("did:oan identifier does not match profile-v2 syntax")]
+    InvalidDidOanIdentifier,
     #[error("did document controller is required")]
     MissingController,
     #[error("did document top-level proof is required")]
@@ -845,7 +834,7 @@ impl DidDocument {
             return Err(DidDocumentError::InvalidTypeCombination);
         }
         let did = oan_did_oan::DidOan::parse(&self.id)
-            .map_err(|_| DidDocumentError::SubjectCodeResourceTypeMismatch)?;
+            .map_err(|_| DidDocumentError::InvalidDidOanIdentifier)?;
         let _ = did;
         let proof = self.proof.as_ref().ok_or(DidDocumentError::MissingProof)?;
         validate_proof(self, controller, proof)?;
@@ -1034,7 +1023,7 @@ mod tests {
                 external_identifiers: vec![],
                 identity_type: None,
                 controller_did: None,
-                publisher_did: Some("did:oan:ORLG:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
+                publisher_did: Some("did:oan:P9aBc:8LcR3Vn5YpQw2Tx7Mb9Zd4Fa6GhKsEuJ".to_owned()),
                 issuer_did: None,
                 ttl: None,
                 resource_description: Some(ResourceDescription {
@@ -1094,14 +1083,6 @@ mod tests {
     }
 
     #[test]
-    fn node_role_semantic_codes_use_infrastructure_prefixes() {
-        assert_eq!(NodeRole::Root.semantic_code(), "INRT");
-        assert_eq!(NodeRole::Registrar.semantic_code(), "INRG");
-        assert_eq!(NodeRole::Discovery.semantic_code(), "INDS");
-        assert_eq!(NodeRole::ServiceAgent.semantic_code(), "AGDM");
-    }
-
-    #[test]
     fn profile_v2_type_values_are_independent_of_did_code() {
         assert_eq!(ResourceType::Skill.as_str(), "skill");
         assert_eq!(ResourceType::RegistrarNode.as_str(), "registrar_node");
@@ -1157,6 +1138,98 @@ mod tests {
     }
 
     #[test]
+    fn external_identifier_count_duplicate_and_size_limits_are_enforced() {
+        let values = (0..9)
+            .map(|index| ExternalIdentifier {
+                id: format!("urn:example:{index}"),
+                resolution_service_endpoint: None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            validate_external_identifiers(&values).unwrap_err(),
+            DidDocumentError::InvalidExternalIdentifier("maxItems")
+        );
+
+        let duplicate = vec![
+            ExternalIdentifier {
+                id: "urn:example:dup".to_owned(),
+                resolution_service_endpoint: None,
+            },
+            ExternalIdentifier {
+                id: "urn:example:dup".to_owned(),
+                resolution_service_endpoint: None,
+            },
+        ];
+        assert_eq!(
+            validate_external_identifiers(&duplicate).unwrap_err(),
+            DidDocumentError::InvalidExternalIdentifier("duplicate")
+        );
+
+        let oversized = vec![
+            ExternalIdentifier {
+                id: "urn:example:a".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "a".repeat(1024)
+                )),
+            },
+            ExternalIdentifier {
+                id: "urn:example:b".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "b".repeat(1024)
+                )),
+            },
+            ExternalIdentifier {
+                id: "urn:example:c".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "c".repeat(1024)
+                )),
+            },
+            ExternalIdentifier {
+                id: "urn:example:d".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "d".repeat(1024)
+                )),
+            },
+            ExternalIdentifier {
+                id: "urn:example:e".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "e".repeat(1024)
+                )),
+            },
+            ExternalIdentifier {
+                id: "urn:example:f".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "f".repeat(1024)
+                )),
+            },
+            ExternalIdentifier {
+                id: "urn:example:g".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "g".repeat(1024)
+                )),
+            },
+            ExternalIdentifier {
+                id: "urn:example:h".to_owned(),
+                resolution_service_endpoint: Some(format!(
+                    "https://example.org/{}",
+                    "h".repeat(1024)
+                )),
+            },
+        ];
+        assert_eq!(
+            validate_external_identifiers(&oversized).unwrap_err(),
+            DidDocumentError::InvalidExternalIdentifier("endpointLength")
+        );
+    }
+
+    #[test]
     fn profile_v2_rejects_legacy_crypto_suite() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof.as_mut().unwrap().crypto_suite = Some(CryptoSuite::Ed25519Sha256Legacy);
@@ -1171,6 +1244,59 @@ mod tests {
         let document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
 
         assert_eq!(document.validate_oan_resource(), Ok(()));
+    }
+
+    #[test]
+    fn unspecified_type_pair_is_valid_without_did_code_inference() {
+        let document =
+            sample_oan_resource_document(ResourceType::Unspecified, SubjectType::Unspecified);
+
+        assert_eq!(document.validate_oan_resource(), Ok(()));
+    }
+
+    #[test]
+    fn profile_v2_requires_top_level_proof() {
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        document.proof = None;
+        assert_eq!(
+            document.validate_oan_resource().unwrap_err(),
+            DidDocumentError::MissingProof
+        );
+    }
+
+    #[test]
+    fn profile_v2_rejects_proof_relationship_mismatch() {
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        document.proof.as_mut().unwrap().verification_method =
+            Some(format!("{}#missing", document.id));
+        assert_eq!(
+            document.validate_oan_resource().unwrap_err(),
+            DidDocumentError::InvalidProof("creator")
+        );
+
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        let method_id = document
+            .proof
+            .as_ref()
+            .unwrap()
+            .verification_method
+            .clone()
+            .unwrap();
+        document.assertion_method = vec![format!("{method_id}-other")];
+        assert_eq!(
+            document.validate_oan_resource().unwrap_err(),
+            DidDocumentError::InvalidProof("assertionMethod")
+        );
+    }
+
+    #[test]
+    fn profile_v2_rejects_proof_algorithm_mismatch() {
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        document.proof.as_mut().unwrap().hash_algorithm = Some("SHA-256".to_owned());
+        assert_eq!(
+            document.validate_oan_resource().unwrap_err(),
+            DidDocumentError::InvalidProof("algorithmMismatch")
+        );
     }
 
     #[test]
@@ -1279,7 +1405,7 @@ mod tests {
         document.id = "did:oan:K7mQ:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::SubjectCodeResourceTypeMismatch
+            DidDocumentError::InvalidDidOanIdentifier
         );
     }
 
@@ -1298,7 +1424,7 @@ mod tests {
             document.id = invalid_id.to_owned();
             assert_eq!(
                 document.validate_oan_resource().unwrap_err(),
-                DidDocumentError::SubjectCodeResourceTypeMismatch
+                DidDocumentError::InvalidDidOanIdentifier
             );
         }
     }

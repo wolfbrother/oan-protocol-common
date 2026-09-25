@@ -15,8 +15,8 @@ use std::sync::OnceLock;
 use thiserror::Error;
 
 pub const DID_PREFIX: &str = "did:oan:";
-pub const REGISTRAR_CODE_LEN: usize = 5;
-pub const RESOURCE_SUFFIX_LEN: usize = 32;
+pub const ROUTING_CODE_LEN: usize = 5;
+pub const SUFFIX_CODE_LEN: usize = 32;
 pub const DID_LEN: usize = 46;
 pub const BASE58_ALPHABET: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -33,10 +33,10 @@ pub enum DidOanError {
     InvalidPrefix,
     #[error("did must have 4 colon-separated parts")]
     InvalidPartCount,
-    #[error("registrar code must be exactly 5 case-sensitive Base58 characters")]
-    InvalidRegistrarCode,
-    #[error("resource suffix must be exactly 32 Base58 characters")]
-    InvalidResourceSuffix,
+    #[error("routing-code must be exactly 5 case-sensitive Base58 characters")]
+    InvalidRoutingCode,
+    #[error("suffix-code must be exactly 32 Base58 characters")]
+    InvalidSuffixCode,
     #[error("invalid did:oan profile-v2 syntax")]
     InvalidSyntax,
 }
@@ -44,8 +44,8 @@ pub enum DidOanError {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DidOan {
     value: String,
-    registrar_code: String,
-    resource_suffix: String,
+    routing_code: String,
+    suffix_code: String,
 }
 
 impl DidOan {
@@ -58,41 +58,41 @@ impl DidOan {
         if parts.len() != 4 {
             return Err(DidOanError::InvalidPartCount);
         }
-        let registrar_code = parts[2];
-        validate_registrar_code(registrar_code)?;
-        let resource_suffix = parts[3];
-        validate_resource_suffix(resource_suffix)?;
+        let routing_code = parts[2];
+        validate_routing_code(routing_code)?;
+        let suffix_code = parts[3];
+        validate_suffix_code(suffix_code)?;
         if !did_regex().is_match(value) {
             return Err(DidOanError::InvalidSyntax);
         }
         Ok(Self {
             value: value.to_owned(),
-            registrar_code: registrar_code.to_owned(),
-            resource_suffix: resource_suffix.to_owned(),
+            routing_code: routing_code.to_owned(),
+            suffix_code: suffix_code.to_owned(),
         })
     }
 
-    pub fn generate(registrar_code: &str) -> Result<Self, DidOanError> {
-        validate_registrar_code(registrar_code)?;
+    pub fn generate(routing_code: &str) -> Result<Self, DidOanError> {
+        validate_routing_code(routing_code)?;
         Self::parse(format!(
-            "{DID_PREFIX}{registrar_code}:{}",
+            "{DID_PREFIX}{routing_code}:{}",
             random_base58_suffix()
         ))
     }
 
     pub fn derive(
-        registrar_code: &str,
+        routing_code: &str,
         controller_material: &[u8],
         nonce: &[u8],
     ) -> Result<Self, DidOanError> {
-        validate_registrar_code(registrar_code)?;
+        validate_routing_code(routing_code)?;
         let mut hasher = Sha256::new();
         hasher.update(b"OAN-DID-SUFFIX-v2");
-        hasher.update(registrar_code.as_bytes());
+        hasher.update(routing_code.as_bytes());
         hasher.update(controller_material);
         hasher.update(nonce);
         Self::parse(format!(
-            "{DID_PREFIX}{registrar_code}:{}",
+            "{DID_PREFIX}{routing_code}:{}",
             derived_base58_suffix(hasher)
         ))
     }
@@ -100,11 +100,11 @@ impl DidOan {
     pub fn as_str(&self) -> &str {
         &self.value
     }
-    pub fn registrar_code(&self) -> &str {
-        &self.registrar_code
+    pub fn routing_code(&self) -> &str {
+        &self.routing_code
     }
-    pub fn resource_suffix(&self) -> &str {
-        &self.resource_suffix
+    pub fn suffix_code(&self) -> &str {
+        &self.suffix_code
     }
     pub fn key_id(&self, fragment: &str) -> String {
         format!("{}#{}", self.value, fragment.trim_start_matches('#'))
@@ -128,43 +128,43 @@ pub fn validate(value: &str) -> Result<(), DidOanError> {
     DidOan::parse(value).map(|_| ())
 }
 
-pub fn validate_registrar_code(value: &str) -> Result<(), DidOanError> {
-    if value.len() == REGISTRAR_CODE_LEN && value.chars().all(|ch| BASE58_ALPHABET.contains(ch)) {
+pub fn validate_routing_code(value: &str) -> Result<(), DidOanError> {
+    if value.len() == ROUTING_CODE_LEN && value.chars().all(|ch| BASE58_ALPHABET.contains(ch)) {
         Ok(())
     } else {
-        Err(DidOanError::InvalidRegistrarCode)
+        Err(DidOanError::InvalidRoutingCode)
     }
 }
 
-pub fn validate_resource_suffix(value: &str) -> Result<(), DidOanError> {
-    if value.len() == RESOURCE_SUFFIX_LEN && value.chars().all(|ch| BASE58_ALPHABET.contains(ch)) {
+pub fn validate_suffix_code(value: &str) -> Result<(), DidOanError> {
+    if value.len() == SUFFIX_CODE_LEN && value.chars().all(|ch| BASE58_ALPHABET.contains(ch)) {
         Ok(())
     } else {
-        Err(DidOanError::InvalidResourceSuffix)
+        Err(DidOanError::InvalidSuffixCode)
     }
 }
 
 fn random_base58_suffix() -> String {
-    let mut suffix = String::with_capacity(RESOURCE_SUFFIX_LEN);
+    let mut suffix = String::with_capacity(SUFFIX_CODE_LEN);
     let mut bytes = [0u8; 64];
-    while suffix.len() < RESOURCE_SUFFIX_LEN {
+    while suffix.len() < SUFFIX_CODE_LEN {
         OsRng.fill_bytes(&mut bytes);
         push_unbiased_base58_chars(&mut suffix, &bytes);
     }
-    suffix.truncate(RESOURCE_SUFFIX_LEN);
+    suffix.truncate(SUFFIX_CODE_LEN);
     suffix
 }
 
 fn derived_base58_suffix(seed_hasher: Sha256) -> String {
-    let mut suffix = String::with_capacity(RESOURCE_SUFFIX_LEN);
+    let mut suffix = String::with_capacity(SUFFIX_CODE_LEN);
     let mut counter = 0u64;
-    while suffix.len() < RESOURCE_SUFFIX_LEN {
+    while suffix.len() < SUFFIX_CODE_LEN {
         let mut hasher = seed_hasher.clone();
         hasher.update(counter.to_be_bytes());
         push_unbiased_base58_chars(&mut suffix, hasher.finalize().as_slice());
         counter += 1;
     }
-    suffix.truncate(RESOURCE_SUFFIX_LEN);
+    suffix.truncate(SUFFIX_CODE_LEN);
     suffix
 }
 
@@ -174,7 +174,7 @@ fn push_unbiased_base58_chars(output: &mut String, bytes: &[u8]) {
     for byte in bytes {
         if *byte < rejection_zone {
             output.push(alphabet[(*byte as usize) % alphabet.len()] as char);
-            if output.len() == RESOURCE_SUFFIX_LEN {
+            if output.len() == SUFFIX_CODE_LEN {
                 break;
             }
         }
@@ -189,8 +189,8 @@ mod tests {
     #[test]
     fn parses_profile_v2_did_without_type_inference() {
         let did = DidOan::parse(format!("did:oan:K7mQ9:{SUFFIX}")).unwrap();
-        assert_eq!(did.registrar_code(), "K7mQ9");
-        assert_eq!(did.resource_suffix(), SUFFIX);
+        assert_eq!(did.routing_code(), "K7mQ9");
+        assert_eq!(did.suffix_code(), SUFFIX);
         assert_eq!(did.as_str().len(), DID_LEN);
     }
 
@@ -199,7 +199,7 @@ mod tests {
         let upper = DidOan::parse(format!("did:oan:K7mQ9:{SUFFIX}")).unwrap();
         let lower = DidOan::parse(format!("did:oan:k7mQ9:{SUFFIX}")).unwrap();
         assert_ne!(upper, lower);
-        assert_eq!(lower.registrar_code(), "k7mQ9");
+        assert_eq!(lower.routing_code(), "k7mQ9");
     }
 
     #[test]
@@ -207,23 +207,23 @@ mod tests {
         let cases = [
             (
                 format!("did:oan:SKFI:{SUFFIX}"),
-                DidOanError::InvalidRegistrarCode,
+                DidOanError::InvalidRoutingCode,
             ),
             (
                 format!("did:oan:K7mQ:{SUFFIX}"),
-                DidOanError::InvalidRegistrarCode,
+                DidOanError::InvalidRoutingCode,
             ),
             (
                 format!("did:oan:K7mQ90:{SUFFIX}"),
-                DidOanError::InvalidRegistrarCode,
+                DidOanError::InvalidRoutingCode,
             ),
             (
                 format!("did:oan:K7mQ0:{SUFFIX}"),
-                DidOanError::InvalidRegistrarCode,
+                DidOanError::InvalidRoutingCode,
             ),
             (
                 "did:oan:K7mQ9:short".to_owned(),
-                DidOanError::InvalidResourceSuffix,
+                DidOanError::InvalidSuffixCode,
             ),
         ];
         for (value, expected) in cases {
@@ -240,6 +240,37 @@ mod tests {
     }
 
     #[test]
+    fn validates_routing_and_suffix_boundaries() {
+        assert_eq!(validate_routing_code("K7mQ9"), Ok(()));
+        assert_eq!(
+            validate_routing_code("K7mQ"),
+            Err(DidOanError::InvalidRoutingCode)
+        );
+        assert_eq!(
+            validate_routing_code("K7mQ90"),
+            Err(DidOanError::InvalidRoutingCode)
+        );
+        assert_eq!(
+            validate_routing_code("K7mQ0"),
+            Err(DidOanError::InvalidRoutingCode)
+        );
+
+        assert_eq!(validate_suffix_code(SUFFIX), Ok(()));
+        assert_eq!(
+            validate_suffix_code(&SUFFIX[..31]),
+            Err(DidOanError::InvalidSuffixCode)
+        );
+        assert_eq!(
+            validate_suffix_code(&format!("{SUFFIX}1")),
+            Err(DidOanError::InvalidSuffixCode)
+        );
+        assert_eq!(
+            validate_suffix_code("7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgN0"),
+            Err(DidOanError::InvalidSuffixCode)
+        );
+    }
+
+    #[test]
     fn generates_and_derives_stable_profile_v2_identifiers() {
         let generated = DidOan::generate("K7mQ9").unwrap();
         assert_eq!(generated.as_str().len(), DID_LEN);
@@ -247,8 +278,37 @@ mod tests {
         let a = DidOan::derive("K7mQ9", b"controller", b"nonce").unwrap();
         let b = DidOan::derive("K7mQ9", b"controller", b"nonce").unwrap();
         let c = DidOan::derive("K7mQ9", b"controller", b"other").unwrap();
+        let d = DidOan::derive("QwErT", b"controller", b"nonce").unwrap();
         assert_eq!(a, b);
         assert_ne!(a, c);
+        assert_ne!(a, d);
+        assert_eq!(d.routing_code(), "QwErT");
+    }
+
+    #[test]
+    fn cross_language_fixture_did_cases_match_parser_behavior() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-fixtures/did-oan-profile-v2-cross-language.json"
+        ))
+        .unwrap();
+        let cases = fixture["didCases"].as_array().unwrap();
+        assert!(cases.len() >= 10);
+
+        for case in cases {
+            let did = case["did"].as_str().unwrap();
+            match case["expected"].as_str().unwrap() {
+                "valid" => {
+                    let parsed = DidOan::parse(did).unwrap();
+                    assert_eq!(parsed.routing_code(), case["routingCode"].as_str().unwrap());
+                    assert_eq!(parsed.suffix_code(), case["suffixCode"].as_str().unwrap());
+                }
+                "invalid" => {
+                    let actual = format!("{:?}", DidOan::parse(did).unwrap_err());
+                    assert_eq!(actual, case["error"].as_str().unwrap());
+                }
+                expected => panic!("unexpected fixture expectation: {expected}"),
+            }
+        }
     }
 
     #[test]

@@ -654,4 +654,49 @@ mod tests {
             "ea22ffc510474c57eea32d8835c9335defa6bb9b4e3226046539027de61ee5cf"
         );
     }
+
+    #[test]
+    fn profile_v2_cross_language_vector_matches_canonical_and_hash_outputs() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-fixtures/did-oan-profile-v2-cross-language.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            canonical_json_value(&fixture["canonicalJsonCase"]["value"]),
+            fixture["canonicalJsonCase"]["canonical"].as_str().unwrap()
+        );
+
+        let document_without_proof = fixture["documentWithoutProof"].clone();
+        assert_eq!(
+            String::from_utf8(
+                signature_input(CryptoSuite::Ed25519Sha256, &document_without_proof).unwrap()
+            )
+            .unwrap(),
+            fixture["signatureInputCanonical"].as_str().unwrap()
+        );
+
+        let mut complete_document = document_without_proof.clone();
+        complete_document["proof"] = fixture["proof"].clone();
+        assert_eq!(
+            hash_json_with_suite(CryptoSuite::Ed25519Sha256, &complete_document).unwrap(),
+            fixture["completeDocumentHashSha256"].as_str().unwrap()
+        );
+
+        let mut changed_proof = complete_document.clone();
+        changed_proof["proof"]["proofValue"] = serde_json::json!("fixture-proof-value-mutated");
+        assert_eq!(
+            hash_json_with_suite(CryptoSuite::Ed25519Sha256, &changed_proof).unwrap(),
+            fixture["proofMutationHashSha256"].as_str().unwrap()
+        );
+
+        let mut changed_external_id = complete_document;
+        changed_external_id["oanMetadata"]["externalIdentifiers"][0]["id"] =
+            serde_json::json!("urn:example:skill:changed");
+        assert_eq!(
+            hash_json_with_suite(CryptoSuite::Ed25519Sha256, &changed_external_id).unwrap(),
+            fixture["externalIdentifierMutationHashSha256"]
+                .as_str()
+                .unwrap()
+        );
+    }
 }
