@@ -262,6 +262,7 @@ fn resource_type_matches_subject(resource_type: &ResourceType, subject_type: &Su
                 ResourceType::TrustIndexerNode,
                 SubjectType::TrustIndexerNode
             )
+            | (ResourceType::Controller, SubjectType::Controller)
             | (ResourceType::Unspecified, SubjectType::Unspecified)
     )
 }
