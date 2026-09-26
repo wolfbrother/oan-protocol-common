@@ -887,10 +887,7 @@ mod tests {
     fn resource_routing_code_must_match_registrar_suffix_prefix() {
         let registrar = "did:oan:P9aBc:6HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let resource = "did:oan:6HkPq:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
-        assert_eq!(
-            validate_resource_routing_code(resource, registrar),
-            Ok(())
-        );
+        assert_eq!(validate_resource_routing_code(resource, registrar), Ok(()));
     }
 
     #[test]
