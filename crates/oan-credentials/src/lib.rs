@@ -621,4 +621,39 @@ mod tests {
         )).unwrap()).unwrap();
         assert!(validate_self_claimed_capability_credential(&capability).is_ok());
     }
+
+    #[test]
+    fn business_credential_subject_validators_reject_missing_required_fields() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
+        let mut credential = OanBusinessFactCredential {
+            context: vec!["https://www.w3.org/2018/credentials/v1".to_owned()],
+            id: None,
+            credential_type: vec![
+                "VerifiableCredential".to_owned(),
+                VC_BUSINESS_FACT.to_owned(),
+            ],
+            issuer: "did:oan:issuer".to_owned(),
+            issuance_date: Utc::now(),
+            expiration_date: None,
+            credential_subject: BusinessFactCredentialSubject {
+                id: String::new(),
+                subject_type: "organization".to_owned(),
+                fact_type: "incorporated".to_owned(),
+                claim: json!({}),
+            },
+            credential_status: None,
+            credential_schema: None,
+            proof: proof_for(&json!({}), "did:oan:issuer#key-1", &key.signing_key),
+        };
+        assert!(matches!(
+            validate_business_fact_credential(&credential),
+            Err(CredentialError::InvalidSubject)
+        ));
+        credential.credential_subject.id = "did:oan:subject".to_owned();
+        credential.credential_subject.fact_type.clear();
+        assert!(matches!(
+            validate_business_fact_credential(&credential),
+            Err(CredentialError::InvalidSubject)
+        ));
+    }
 }
