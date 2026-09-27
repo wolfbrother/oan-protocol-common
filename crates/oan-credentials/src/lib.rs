@@ -6,7 +6,7 @@
 //! Credential models and verification helpers.
 
 use chrono::{DateTime, Utc};
-use oan_core::{CryptoSuite, DataIntegrityProof};
+use oan_core::{CryptoSuite, DataIntegrityProof, ResourceType, SubjectType};
 use oan_crypto::{
     build_data_integrity_proof, hash_json_with_suite, signature_input, verify_payload_with_proof,
     CryptoError, SigningKey, VerifyingKey,
@@ -23,42 +23,285 @@ pub enum CredentialError {
     MissingProof,
     #[error("credential signature is invalid")]
     InvalidSignature,
+    #[error("credential type is invalid")]
+    InvalidType,
+    #[error("credential subject is invalid")]
+    InvalidSubject,
+    #[error("credential serialization failed: {0}")]
+    Serialization(#[from] serde_json::Error),
 }
 
 pub type CredentialProof = DataIntegrityProof;
 
+pub const VC_INFRASTRUCTURE_AUTHORIZATION: &str = "OANInfrastructureAuthorizationCredential";
+pub const VC_RESOURCE_REGISTRATION: &str = "OANResourceRegistrationCredential";
+pub const VC_BUSINESS_FACT: &str = "OANBusinessFactCredential";
+pub const VC_QUALIFICATION: &str = "OANQualificationCredential";
+pub const VC_AUDIT_RESULT: &str = "OANAuditResultCredential";
+pub const VC_SELF_CLAIMED_CAPABILITY: &str = "OANSelfClaimedCapabilityCredential";
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeAuthorizationCredential {
+pub struct CredentialStatusReference {
+    pub id: String,
     #[serde(rename = "type")]
-    pub credential_type: String,
-    pub issuer: String,
-    pub subject: String,
-    pub role: String,
-    pub status: String,
-    #[serde(rename = "issuedAt")]
-    pub issued_at: DateTime<Utc>,
-    #[serde(rename = "expiresAt", skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<DateTime<Utc>>,
-    #[serde(default)]
-    pub claims: Value,
+    pub status_type: String,
+    #[serde(rename = "credentialId", skip_serializing_if = "Option::is_none")]
+    pub credential_id: Option<String>,
+    #[serde(rename = "subjectDid", skip_serializing_if = "Option::is_none")]
+    pub subject_did: Option<String>,
+    #[serde(rename = "issuerDid", skip_serializing_if = "Option::is_none")]
+    pub issuer_did: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub proof: Option<CredentialProof>,
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<u64>,
+    #[serde(rename = "eventDigest", skip_serializing_if = "Option::is_none")]
+    pub event_digest: Option<String>,
+    #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(rename = "packageId", skip_serializing_if = "Option::is_none")]
+    pub package_id: Option<String>,
+    #[serde(rename = "bulletinObjectId", skip_serializing_if = "Option::is_none")]
+    pub bulletin_object_id: Option<String>,
+    #[serde(
+        rename = "expectedGovernanceState",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expected_governance_state: Option<String>,
+    #[serde(rename = "latestAction", skip_serializing_if = "Option::is_none")]
+    pub latest_action: Option<String>,
+    #[serde(
+        rename = "didDocumentStableHash",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub did_document_stable_hash: Option<String>,
+    #[serde(rename = "policyHash", skip_serializing_if = "Option::is_none")]
+    pub policy_hash: Option<String>,
+    #[serde(rename = "effectiveFromMs", skip_serializing_if = "Option::is_none")]
+    pub effective_from_ms: Option<u64>,
+    #[serde(rename = "expiresAtMs", skip_serializing_if = "Option::is_none")]
+    pub expires_at_ms: Option<u64>,
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CredentialSchemaReference {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub schema_type: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AgentRegistrationCredential {
-    #[serde(rename = "type")]
-    pub credential_type: String,
-    pub issuer: String,
-    pub subject: String,
-    pub status: String,
-    #[serde(rename = "issuedAt")]
-    pub issued_at: DateTime<Utc>,
-    #[serde(rename = "expiresAt", skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<DateTime<Utc>>,
-    pub claims: Value,
+pub struct OanVerifiableCredential<T> {
+    #[serde(rename = "@context")]
+    pub context: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub proof: Option<CredentialProof>,
+    pub id: Option<String>,
+    #[serde(rename = "type")]
+    pub credential_type: Vec<String>,
+    pub issuer: String,
+    #[serde(rename = "issuanceDate")]
+    pub issuance_date: DateTime<Utc>,
+    #[serde(rename = "expirationDate", skip_serializing_if = "Option::is_none")]
+    pub expiration_date: Option<DateTime<Utc>>,
+    #[serde(rename = "credentialSubject")]
+    pub credential_subject: T,
+    #[serde(rename = "credentialStatus", skip_serializing_if = "Option::is_none")]
+    pub credential_status: Option<CredentialStatusReference>,
+    #[serde(rename = "credentialSchema", skip_serializing_if = "Option::is_none")]
+    pub credential_schema: Option<CredentialSchemaReference>,
+    pub proof: CredentialProof,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InfrastructureAuthorizationCredentialSubject {
+    pub id: String,
+    pub role: String,
+    #[serde(rename = "subjectType")]
+    pub subject_type: String,
+    #[serde(rename = "resourceType")]
+    pub resource_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
+    #[serde(rename = "didDocumentHash")]
+    pub did_document_hash: String,
+    #[serde(rename = "governanceState")]
+    pub governance_state: String,
+    #[serde(rename = "governanceBindingId")]
+    pub governance_binding_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResourceRegistrationCredentialSubject {
+    pub id: String,
+    #[serde(rename = "resourceType")]
+    pub resource_type: ResourceType,
+    #[serde(rename = "subjectType")]
+    pub subject_type: SubjectType,
+    #[serde(rename = "registrarDid")]
+    pub registrar_did: String,
+    #[serde(rename = "didDocumentHash")]
+    pub did_document_hash: String,
+    #[serde(rename = "metadataHash")]
+    pub metadata_hash: String,
+    #[serde(rename = "packageHash")]
+    pub package_hash: String,
+    #[serde(rename = "packageVersion")]
+    pub package_version: String,
+    #[serde(rename = "hashAlgorithm")]
+    pub hash_algorithm: String,
+    #[serde(rename = "authorizedDomains", default)]
+    pub authorized_domains: Vec<String>,
+    #[serde(rename = "externalIdentifiers", default)]
+    pub external_identifiers: Vec<ExternalIdentifierReference>,
+    #[serde(rename = "lifecycleState")]
+    pub lifecycle_state: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BusinessFactCredentialSubject {
+    pub id: String,
+    #[serde(rename = "subjectType")]
+    pub subject_type: String,
+    #[serde(rename = "factType")]
+    pub fact_type: String,
+    pub claim: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct QualificationCredentialSubject {
+    pub id: String,
+    #[serde(rename = "subjectType")]
+    pub subject_type: String,
+    #[serde(rename = "qualificationType")]
+    pub qualification_type: String,
+    pub qualification: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AuditResultCredentialSubject {
+    pub id: String,
+    #[serde(rename = "subjectType")]
+    pub subject_type: String,
+    #[serde(rename = "auditType")]
+    pub audit_type: String,
+    pub result: Value,
+    #[serde(rename = "auditedAt")]
+    pub audited_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SelfClaimedCapabilityCredentialSubject {
+    pub id: String,
+    pub capability: String,
+    pub claim: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalIdentifierReference {
+    pub id: String,
+}
+
+pub type OanInfrastructureAuthorizationCredential =
+    OanVerifiableCredential<InfrastructureAuthorizationCredentialSubject>;
+pub type OanResourceRegistrationCredential =
+    OanVerifiableCredential<ResourceRegistrationCredentialSubject>;
+pub type OanBusinessFactCredential = OanVerifiableCredential<BusinessFactCredentialSubject>;
+pub type OanQualificationCredential = OanVerifiableCredential<QualificationCredentialSubject>;
+pub type OanAuditResultCredential = OanVerifiableCredential<AuditResultCredentialSubject>;
+pub type OanSelfClaimedCapabilityCredential =
+    OanVerifiableCredential<SelfClaimedCapabilityCredentialSubject>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OanIdentity {
+    pub id: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    pub did: String,
+    #[serde(rename = "verificationMethodId")]
+    pub verification_method_id: String,
+    #[serde(rename = "didDocument")]
+    pub did_document: oan_core::DidDocument,
+    #[serde(rename = "publicKeyJwk")]
+    pub public_key_jwk: Value,
+    #[serde(rename = "privateKeyJwk")]
+    pub private_key_jwk: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GovernedInfrastructureRole {
+    Root,
+    Registrar,
+    Discovery,
+    VcIssuer,
+}
+
+impl GovernedInfrastructureRole {
+    pub fn resource_type(&self) -> &'static str {
+        match self {
+            Self::Root => "root_node",
+            Self::Registrar => "registrar_node",
+            Self::Discovery => "discovery_node",
+            Self::VcIssuer => "vc_issuer_node",
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Root => "root",
+            Self::Registrar => "registrar",
+            Self::Discovery => "discovery",
+            Self::VcIssuer => "vc_issuer",
+        }
+    }
+}
+
+impl OanIdentity {
+    pub fn validate(&self) -> Result<(), CredentialError> {
+        if self.did != self.did_document.id {
+            return Err(CredentialError::InvalidSubject);
+        }
+        if self.verification_method_id.is_empty()
+            || self
+                .did_document
+                .verification_method
+                .iter()
+                .all(|method| method.id != self.verification_method_id)
+        {
+            return Err(CredentialError::InvalidSubject);
+        }
+        let method = self
+            .did_document
+            .verification_method
+            .iter()
+            .find(|method| method.id == self.verification_method_id)
+            .ok_or(CredentialError::InvalidSubject)?;
+        if method.controller != self.did
+            || !self
+                .did_document
+                .authentication
+                .iter()
+                .any(|value| value == &self.verification_method_id)
+            || !self
+                .did_document
+                .assertion_method
+                .iter()
+                .any(|value| value == &self.verification_method_id)
+        {
+            return Err(CredentialError::InvalidSubject);
+        }
+        if method.public_key_jwk.as_ref() != Some(&self.public_key_jwk) {
+            return Err(CredentialError::InvalidSubject);
+        }
+        self.did_document
+            .validate_mvp()
+            .map_err(|_| CredentialError::InvalidSubject)?;
+        Ok(())
+    }
 }
 
 pub fn proof_payload_hash<T: Serialize>(
@@ -120,230 +363,262 @@ where
     Ok(actual)
 }
 
-impl NodeAuthorizationCredential {
-    pub fn unsigned(issuer: String, subject: String, role: String, claims: Value) -> Self {
-        Self {
-            credential_type: "NodeAuthorizationCredential".to_owned(),
-            issuer,
-            subject,
-            role,
-            status: "active".to_owned(),
-            issued_at: Utc::now(),
-            expires_at: None,
-            claims,
-            proof: None,
-        }
-    }
-
-    pub fn sign(
-        mut self,
-        key_id: String,
-        signing_key: &SigningKey,
-    ) -> Result<Self, CredentialError> {
-        let unsigned = Self {
-            proof: None,
-            ..self.clone()
-        };
-        self.proof = Some(sign_credential(
-            &unsigned,
-            key_id.clone(),
-            key_id,
-            signing_key,
-        )?);
-        Ok(self)
-    }
-}
-
-impl AgentRegistrationCredential {
-    pub fn unsigned(issuer: String, subject: String, claims: Value) -> Self {
-        Self {
-            credential_type: "AgentRegistrationCredential".to_owned(),
-            issuer,
-            subject,
-            status: "active".to_owned(),
-            issued_at: Utc::now(),
-            expires_at: None,
-            claims,
-            proof: None,
-        }
-    }
-
-    pub fn sign(
-        mut self,
-        key_id: String,
-        signing_key: &SigningKey,
-    ) -> Result<Self, CredentialError> {
-        let unsigned = Self {
-            proof: None,
-            ..self.clone()
-        };
-        self.proof = Some(sign_credential(
-            &unsigned,
-            key_id.clone(),
-            key_id,
-            signing_key,
-        )?);
-        Ok(self)
-    }
-}
-
-pub fn verify_agent_registration_credential(
-    credential: &AgentRegistrationCredential,
-    issuer_verifying_key: &VerifyingKey,
+pub fn validate_infrastructure_authorization_credential(
+    credential: &OanInfrastructureAuthorizationCredential,
 ) -> Result<(), CredentialError> {
-    let unsigned = AgentRegistrationCredential {
-        proof: None,
-        ..credential.clone()
-    };
-    verify_signed_payload(&unsigned, credential.proof.as_ref(), issuer_verifying_key)
+    if credential.credential_type.as_slice()
+        != ["VerifiableCredential", VC_INFRASTRUCTURE_AUTHORIZATION]
+    {
+        return Err(CredentialError::InvalidType);
+    }
+    let subject = &credential.credential_subject;
+    let role_resource_matches = matches!(
+        (subject.role.as_str(), subject.resource_type.as_str()),
+        ("root", "root_node")
+            | ("registrar", "registrar_node")
+            | ("discovery", "discovery_node")
+            | ("vc_issuer", "vc_issuer_node")
+    );
+    if subject.subject_type != "infrastructure_node" || !role_resource_matches {
+        return Err(CredentialError::InvalidSubject);
+    }
+    if subject.id.is_empty()
+        || subject.did_document_hash.is_empty()
+        || subject.governance_binding_id.is_empty()
+        || !matches!(
+            subject.governance_state.as_str(),
+            "active" | "suspended" | "revoked"
+        )
+    {
+        return Err(CredentialError::InvalidSubject);
+    }
+    Ok(())
+}
+
+pub fn validate_resource_registration_credential(
+    credential: &OanResourceRegistrationCredential,
+) -> Result<(), CredentialError> {
+    if credential.credential_type.as_slice() != ["VerifiableCredential", VC_RESOURCE_REGISTRATION] {
+        return Err(CredentialError::InvalidType);
+    }
+    let subject = &credential.credential_subject;
+    if subject.id.is_empty()
+        || subject.registrar_did.is_empty()
+        || subject.did_document_hash.is_empty()
+        || subject.metadata_hash.is_empty()
+        || subject.package_hash.is_empty()
+        || subject.package_version.is_empty()
+        || subject.hash_algorithm.is_empty()
+    {
+        return Err(CredentialError::InvalidSubject);
+    }
+    Ok(())
+}
+
+fn validate_business_subject(subject: &BusinessFactCredentialSubject) -> Result<(), CredentialError> {
+    if subject.id.is_empty() || subject.subject_type.is_empty() || subject.fact_type.is_empty() {
+        return Err(CredentialError::InvalidSubject);
+    }
+    Ok(())
+}
+
+pub fn validate_business_fact_credential(
+    credential: &OanBusinessFactCredential,
+) -> Result<(), CredentialError> {
+    if credential.credential_type.as_slice() != ["VerifiableCredential", VC_BUSINESS_FACT] {
+        return Err(CredentialError::InvalidType);
+    }
+    validate_business_subject(&credential.credential_subject)
+}
+
+pub fn validate_qualification_credential(
+    credential: &OanQualificationCredential,
+) -> Result<(), CredentialError> {
+    if credential.credential_type.as_slice() != ["VerifiableCredential", VC_QUALIFICATION] {
+        return Err(CredentialError::InvalidType);
+    }
+    let subject = &credential.credential_subject;
+    if subject.id.is_empty()
+        || subject.subject_type.is_empty()
+        || subject.qualification_type.is_empty()
+    {
+        return Err(CredentialError::InvalidSubject);
+    }
+    Ok(())
+}
+
+pub fn validate_audit_result_credential(
+    credential: &OanAuditResultCredential,
+) -> Result<(), CredentialError> {
+    if credential.credential_type.as_slice() != ["VerifiableCredential", VC_AUDIT_RESULT] {
+        return Err(CredentialError::InvalidType);
+    }
+    let subject = &credential.credential_subject;
+    if subject.id.is_empty() || subject.subject_type.is_empty() || subject.audit_type.is_empty() {
+        return Err(CredentialError::InvalidSubject);
+    }
+    Ok(())
+}
+
+pub fn validate_self_claimed_capability_credential(
+    credential: &OanSelfClaimedCapabilityCredential,
+) -> Result<(), CredentialError> {
+    if credential.credential_type.as_slice()
+        != ["VerifiableCredential", VC_SELF_CLAIMED_CAPABILITY]
+    {
+        return Err(CredentialError::InvalidType);
+    }
+    let subject = &credential.credential_subject;
+    if subject.id.is_empty() || subject.capability.is_empty() {
+        return Err(CredentialError::InvalidSubject);
+    }
+    Ok(())
+}
+
+pub fn verify_oan_credential<T>(
+    credential: &OanVerifiableCredential<T>,
+    issuer_verifying_key: &VerifyingKey,
+) -> Result<(), CredentialError>
+where
+    T: Serialize,
+{
+    let mut unsigned = serde_json::to_value(credential)?;
+    unsigned
+        .as_object_mut()
+        .ok_or(CredentialError::InvalidSubject)?
+        .remove("proof");
+    verify_signed_payload(&unsigned, Some(&credential.proof), issuer_verifying_key)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oan_crypto::{generate_keypair, public_key_multibase};
+    use chrono::Utc;
+    use oan_crypto::generate_keypair;
     use serde_json::json;
 
+    fn proof_for<T: Serialize>(payload: &T, key_id: &str, key: &SigningKey) -> CredentialProof {
+        sign_credential(payload, key_id.to_owned(), key_id.to_owned(), key).unwrap()
+    }
+
     #[test]
-    fn signs_registration_credential_with_ed25519() {
+    fn strict_infrastructure_subject_is_accepted() {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
-        let credential = AgentRegistrationCredential::unsigned(
-            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
-            json!({"capabilityTags": ["echo"]}),
-        )
-        .sign(
-            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
-            &key.signing_key,
-        )
-        .unwrap();
-
-        let unsigned = AgentRegistrationCredential {
-            proof: None,
-            ..credential.clone()
+        let subject = InfrastructureAuthorizationCredentialSubject {
+            id: "did:oan:2Xr85:Edi352G96M7kgMB84enoEG2mj8AsDm3u".to_owned(),
+            role: "registrar".to_owned(),
+            subject_type: "infrastructure_node".to_owned(),
+            resource_type: "registrar_node".to_owned(),
+            endpoint: None,
+            authorized_domains: vec!["technology".to_owned()],
+            did_document_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            governance_state: "active".to_owned(),
+            governance_binding_id: "5:digest".to_owned(),
         };
-        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
-    }
-
-    #[test]
-    fn signs_registration_credential_with_sm2() {
-        let key = generate_keypair(CryptoSuite::Sm2Sm3).unwrap();
-        let credential = AgentRegistrationCredential::unsigned(
-            "did:oan:AGRG:zgregistrarregistrar1234".to_owned(),
-            "did:oan:AGDM:zserviceagentservice1234".to_owned(),
-            json!({"capabilityTags": ["echo"]}),
-        )
-        .sign(
-            "did:oan:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
-            &key.signing_key,
-        )
-        .unwrap();
-
-        let unsigned = AgentRegistrationCredential {
-            proof: None,
-            ..credential.clone()
+        let mut vc = OanVerifiableCredential {
+            context: vec!["https://www.w3.org/2018/credentials/v1".to_owned()],
+            id: Some("urn:oan:vc:1".to_owned()),
+            credential_type: vec![
+                "VerifiableCredential".to_owned(),
+                VC_INFRASTRUCTURE_AUTHORIZATION.to_owned(),
+            ],
+            issuer: "did:oan:RtAAn:2Xr85ZCniRMWQ1FzsB752VU5L38WcBic".to_owned(),
+            issuance_date: Utc::now(),
+            expiration_date: None,
+            credential_subject: subject,
+            credential_status: None,
+            credential_schema: None,
+            proof: proof_for(
+                &json!({"credentialSubject": "pending"}),
+                "did:oan:root#key-1",
+                &key.signing_key,
+            ),
         };
-        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
+        let mut unsigned = serde_json::to_value(&vc).unwrap();
+        unsigned.as_object_mut().unwrap().remove("proof");
+        vc.proof = proof_for(&unsigned, "did:oan:root#key-1", &key.signing_key);
+        validate_infrastructure_authorization_credential(&vc).unwrap();
+        verify_oan_credential(&vc, &key.verifying_key).unwrap();
     }
 
     #[test]
-    fn rejects_registration_credential_with_wrong_key() {
-        let signing_key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
-        let wrong_key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
-        let credential = AgentRegistrationCredential::unsigned(
-            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
-            json!({"capabilityTags": ["echo"]}),
-        )
-        .sign(
-            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
-            &signing_key.signing_key,
-        )
-        .unwrap();
-
-        assert!(
-            verify_agent_registration_credential(&credential, &wrong_key.verifying_key).is_err()
-        );
+    fn legacy_type_is_rejected() {
+        let subject = InfrastructureAuthorizationCredentialSubject {
+            id: "did:oan:2Xr85:Edi352G96M7kgMB84enoEG2mj8AsDm3u".to_owned(),
+            role: "registrar".to_owned(),
+            subject_type: "infrastructure_node".to_owned(),
+            resource_type: "registrar_node".to_owned(),
+            endpoint: None,
+            authorized_domains: vec![],
+            did_document_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            governance_state: "active".to_owned(),
+            governance_binding_id: "5:digest".to_owned(),
+        };
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
+        let unsigned = json!({"credentialSubject": subject});
+        let vc = OanVerifiableCredential {
+            context: vec!["https://www.w3.org/2018/credentials/v1".to_owned()],
+            id: None,
+            credential_type: vec![
+                "VerifiableCredential".to_owned(),
+                "NodeAuthorizationCredential".to_owned(),
+            ],
+            issuer: "did:oan:root".to_owned(),
+            issuance_date: Utc::now(),
+            expiration_date: None,
+            credential_subject: subject,
+            credential_status: None,
+            credential_schema: None,
+            proof: proof_for(&unsigned, "did:oan:root#key-1", &key.signing_key),
+        };
+        assert!(matches!(
+            validate_infrastructure_authorization_credential(&vc),
+            Err(CredentialError::InvalidType)
+        ));
     }
 
     #[test]
-    fn proof_exposes_suite_metadata() {
-        let key = generate_keypair(CryptoSuite::Sm2Sm3).unwrap();
-        let credential = AgentRegistrationCredential::unsigned(
-            "did:oan:AGRG:zgregistrarregistrar1234".to_owned(),
-            "did:oan:AGDM:zserviceagentservice1234".to_owned(),
-            json!({"capabilityTags": ["echo"]}),
-        )
-        .sign(
-            "did:oan:AGRG:zgregistrarregistrar1234#key-1".to_owned(),
-            &key.signing_key,
-        )
-        .unwrap();
-
-        assert_eq!(
-            credential.proof.as_ref().unwrap().crypto_suite(),
-            Some(CryptoSuite::Sm2Sm3)
-        );
-        assert_eq!(
+    fn business_credential_subject_validators_require_protocol_fields() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
+        let base = |credential_type: &str, subject: Value| {
+            let mut credential = OanVerifiableCredential {
+                context: vec!["https://www.w3.org/2018/credentials/v1".to_owned()],
+                id: None,
+                credential_type: vec!["VerifiableCredential".to_owned(), credential_type.to_owned()],
+                issuer: "did:oan:issuer".to_owned(),
+                issuance_date: Utc::now(),
+                expiration_date: None,
+                credential_subject: subject,
+                credential_status: None,
+                credential_schema: None,
+                proof: proof_for(&json!({}), "did:oan:issuer#key-1", &key.signing_key),
+            };
+            let mut unsigned = serde_json::to_value(&credential).unwrap();
+            unsigned.as_object_mut().unwrap().remove("proof");
+            credential.proof = proof_for(&unsigned, "did:oan:issuer#key-1", &key.signing_key);
             credential
-                .proof
-                .as_ref()
-                .unwrap()
-                .verification_method
-                .as_deref(),
-            Some("did:oan:AGRG:zgregistrarregistrar1234#key-1")
-        );
-        assert!(!public_key_multibase(&key.verifying_key).is_empty());
-    }
-
-    #[test]
-    fn verifies_historical_registration_proof_without_crypto_suite() {
-        let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
-        let mut credential = AgentRegistrationCredential::unsigned(
-            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
-            json!({"capabilityTags": ["echo"]}),
-        )
-        .sign(
-            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
-            &key.signing_key,
-        )
-        .unwrap();
-        let proof = credential.proof.as_mut().unwrap();
-        proof.crypto_suite = None;
-        proof.hash_algorithm = None;
-        proof.verification_method = None;
-
-        let unsigned = AgentRegistrationCredential {
-            proof: None,
-            ..credential.clone()
         };
-        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
-    }
-
-    #[test]
-    fn modern_ed25519_suite_stays_distinct_from_legacy() {
-        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
-        let credential = AgentRegistrationCredential::unsigned(
-            "did:oan:AGRG:efregistrarregistrar1234".to_owned(),
-            "did:oan:AGDM:efserviceagentservice1234".to_owned(),
-            json!({"capabilityTags": ["echo"]}),
-        )
-        .sign(
-            "did:oan:AGRG:efregistrarregistrar1234#key-1".to_owned(),
-            &key.signing_key,
-        )
-        .unwrap();
-
-        assert_eq!(
-            credential.proof.as_ref().unwrap().crypto_suite(),
-            Some(CryptoSuite::Ed25519Sha256)
-        );
-
-        let unsigned = AgentRegistrationCredential {
-            proof: None,
-            ..credential.clone()
-        };
-        verify_signed_payload(&unsigned, credential.proof.as_ref(), &key.verifying_key).unwrap();
+        let business: OanBusinessFactCredential = serde_json::from_value(serde_json::to_value(base(
+            VC_BUSINESS_FACT,
+            json!({"id":"did:oan:subject","subjectType":"organization","factType":"incorporated","claim":{}}),
+        )).unwrap()).unwrap();
+        assert!(validate_business_fact_credential(&business).is_ok());
+        let qualification: OanQualificationCredential = serde_json::from_value(serde_json::to_value(base(
+            VC_QUALIFICATION,
+            json!({"id":"did:oan:subject","subjectType":"organization","qualificationType":"iso","qualification":{}}),
+        )).unwrap()).unwrap();
+        assert!(validate_qualification_credential(&qualification).is_ok());
+        let audit: OanAuditResultCredential = serde_json::from_value(serde_json::to_value(base(
+            VC_AUDIT_RESULT,
+            json!({"id":"did:oan:subject","subjectType":"organization","auditType":"security","result":{},"auditedAt":Utc::now()}),
+        )).unwrap()).unwrap();
+        assert!(validate_audit_result_credential(&audit).is_ok());
+        let capability: OanSelfClaimedCapabilityCredential = serde_json::from_value(serde_json::to_value(base(
+            VC_SELF_CLAIMED_CAPABILITY,
+            json!({"id":"did:oan:subject","capability":"streaming","claim":{}}),
+        )).unwrap()).unwrap();
+        assert!(validate_self_claimed_capability_credential(&capability).is_ok());
     }
 }
