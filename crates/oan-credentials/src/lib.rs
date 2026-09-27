@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use oan_core::{CryptoSuite, DataIntegrityProof, ResourceType, SubjectType};
 use oan_crypto::{
     build_data_integrity_proof, hash_json_with_suite, signature_input, verify_payload_with_proof,
-    CryptoError, SigningKey, VerifyingKey,
+    verifying_key_from_method, CryptoError, SigningKey, VerifyingKey,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -313,6 +313,17 @@ impl OanIdentity {
         self.did_document
             .validate_mvp()
             .map_err(|_| CredentialError::InvalidSubject)?;
+        let proof = self
+            .did_document
+            .proof
+            .as_ref()
+            .ok_or(CredentialError::InvalidSubject)?;
+        let verifying_key =
+            verifying_key_from_method(method).map_err(|_| CredentialError::InvalidSubject)?;
+        let mut unsigned = self.did_document.clone();
+        unsigned.proof = None;
+        verify_payload_with_proof(&unsigned, proof, &verifying_key)
+            .map_err(|_| CredentialError::InvalidSignature)?;
         Ok(())
     }
 }
