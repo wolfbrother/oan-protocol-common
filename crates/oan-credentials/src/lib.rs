@@ -318,6 +318,11 @@ impl OanIdentity {
             .proof
             .as_ref()
             .ok_or(CredentialError::InvalidSubject)?;
+        if proof.verification_method.as_deref() != Some(self.verification_method_id.as_str())
+            || proof.creator != self.verification_method_id
+        {
+            return Err(CredentialError::InvalidSubject);
+        }
         let verifying_key =
             verifying_key_from_method(method).map_err(|_| CredentialError::InvalidSubject)?;
         let mut unsigned = self.did_document.clone();
@@ -506,6 +511,16 @@ pub fn verify_oan_credential<T>(
 where
     T: Serialize,
 {
+    let verification_method = credential
+        .proof
+        .verification_method
+        .as_deref()
+        .ok_or(CredentialError::InvalidSignature)?;
+    if credential.proof.creator != verification_method
+        || !verification_method.starts_with(&format!("{}#", credential.issuer))
+    {
+        return Err(CredentialError::InvalidSignature);
+    }
     let mut unsigned = serde_json::to_value(credential)?;
     unsigned
         .as_object_mut()
@@ -518,7 +533,7 @@ where
 mod tests {
     use super::*;
     use chrono::Utc;
-    use oan_crypto::generate_keypair;
+    use oan_crypto::{generate_keypair, public_key_jwk};
     use serde_json::json;
 
     fn proof_for<T: Serialize>(payload: &T, key_id: &str, key: &SigningKey) -> CredentialProof {
@@ -547,7 +562,7 @@ mod tests {
                 "VerifiableCredential".to_owned(),
                 VC_INFRASTRUCTURE_AUTHORIZATION.to_owned(),
             ],
-            issuer: "did:oan:RtAAn:2Xr85ZCniRMWQ1FzsB752VU5L38WcBic".to_owned(),
+            issuer: "did:oan:root".to_owned(),
             issuance_date: Utc::now(),
             expiration_date: None,
             credential_subject: subject,
@@ -564,6 +579,102 @@ mod tests {
         vc.proof = proof_for(&unsigned, "did:oan:root#key-1", &key.signing_key);
         validate_infrastructure_authorization_credential(&vc).unwrap();
         verify_oan_credential(&vc, &key.verifying_key).unwrap();
+    }
+
+    #[test]
+    fn credential_signature_rejects_non_issuer_verification_method() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
+        let subject = InfrastructureAuthorizationCredentialSubject {
+            id: "did:oan:2Xr85:Edi352G96M7kgMB84enoEG2mj8AsDm3u".to_owned(),
+            role: "registrar".to_owned(),
+            subject_type: "infrastructure_node".to_owned(),
+            resource_type: "registrar_node".to_owned(),
+            endpoint: None,
+            authorized_domains: vec![],
+            did_document_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            governance_state: "active".to_owned(),
+            governance_binding_id: "5:digest".to_owned(),
+        };
+        let mut credential = OanVerifiableCredential {
+            context: vec!["https://www.w3.org/2018/credentials/v1".to_owned()],
+            id: Some("urn:oan:vc:issuer-binding".to_owned()),
+            credential_type: vec![
+                "VerifiableCredential".to_owned(),
+                VC_INFRASTRUCTURE_AUTHORIZATION.to_owned(),
+            ],
+            issuer: "did:oan:root".to_owned(),
+            issuance_date: Utc::now(),
+            expiration_date: None,
+            credential_subject: subject,
+            credential_status: None,
+            credential_schema: None,
+            proof: proof_for(&json!({}), "did:oan:root#key-1", &key.signing_key),
+        };
+        let mut unsigned = serde_json::to_value(&credential).unwrap();
+        unsigned.as_object_mut().unwrap().remove("proof");
+        credential.proof = proof_for(&unsigned, "did:oan:other#key-1", &key.signing_key);
+        assert!(matches!(
+            verify_oan_credential(&credential, &key.verifying_key),
+            Err(CredentialError::InvalidSignature)
+        ));
+    }
+
+    #[test]
+    fn identity_rejects_proof_from_unselected_method() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let selected = format!("{did}#key-1");
+        let other = format!("{did}#key-2");
+        let jwk = public_key_jwk(&key.verifying_key);
+        let mut document = oan_core::DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: did.clone(),
+            controller: Some(oan_core::DidController::Did(did.clone())),
+            verification_method: vec![
+                oan_core::VerificationMethod {
+                    id: selected.clone(),
+                    method_type: "Ed25519VerificationKey2020".to_owned(),
+                    controller: did.clone(),
+                    crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                    public_key_format: None,
+                    public_key_multibase: None,
+                    public_key_jwk: Some(jwk.clone()),
+                },
+                oan_core::VerificationMethod {
+                    id: other.clone(),
+                    method_type: "Ed25519VerificationKey2020".to_owned(),
+                    controller: did.clone(),
+                    crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                    public_key_format: None,
+                    public_key_multibase: None,
+                    public_key_jwk: Some(jwk.clone()),
+                },
+            ],
+            authentication: vec![selected.clone()],
+            assertion_method: vec![selected.clone()],
+            capability_invocation: vec![selected.clone()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let unsigned = document.clone();
+        document.proof = Some(
+            build_data_integrity_proof(&unsigned, did.clone(), other, &key.signing_key).unwrap(),
+        );
+        let identity = OanIdentity {
+            id: "identity-1".to_owned(),
+            created_at: Utc::now().to_rfc3339(),
+            did,
+            verification_method_id: selected,
+            did_document: document,
+            public_key_jwk: jwk,
+            private_key_jwk: json!({}),
+        };
+        assert!(matches!(
+            identity.validate(),
+            Err(CredentialError::InvalidSubject)
+        ));
     }
 
     #[test]
