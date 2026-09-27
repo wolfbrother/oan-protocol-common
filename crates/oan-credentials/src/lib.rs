@@ -280,7 +280,9 @@ impl OanIdentity {
             .iter()
             .find(|method| method.id == self.verification_method_id)
             .ok_or(CredentialError::InvalidSubject)?;
-        if method.controller != self.did
+        if !self.did_document.controller.as_ref().is_some_and(|controller| {
+            controller.contains(&method.controller)
+        })
             || !self
                 .did_document
                 .authentication
@@ -291,6 +293,17 @@ impl OanIdentity {
                 .assertion_method
                 .iter()
                 .any(|value| value == &self.verification_method_id)
+        {
+            return Err(CredentialError::InvalidSubject);
+        }
+        if self.did_document.oan_metadata.as_ref().is_some_and(|metadata| {
+            metadata.subject_type == SubjectType::Controller
+                && metadata.resource_type == ResourceType::Controller
+        }) && !self
+            .did_document
+            .controller
+            .as_ref()
+            .is_some_and(|controller| controller.contains(&self.did))
         {
             return Err(CredentialError::InvalidSubject);
         }
