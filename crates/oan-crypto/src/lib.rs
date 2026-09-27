@@ -172,6 +172,20 @@ pub fn signing_key_from_bytes(suite: CryptoSuite, bytes: &[u8]) -> Result<Signin
     }
 }
 
+pub fn signing_key_from_private_key_jwk(
+    suite: CryptoSuite,
+    private_key_jwk: &serde_json::Value,
+) -> Result<SigningKey, CryptoError> {
+    let d = private_key_jwk
+        .get("d")
+        .and_then(|value| value.as_str())
+        .ok_or(CryptoError::InvalidSigningKey)?;
+    let bytes = URL_SAFE_NO_PAD
+        .decode(d)
+        .map_err(|_| CryptoError::InvalidSigningKey)?;
+    signing_key_from_bytes(suite, &bytes)
+}
+
 pub fn signing_key_from_legacy_ed25519_bytes(
     bytes: &[u8],
 ) -> Result<Ed25519SigningKey, CryptoError> {
@@ -405,6 +419,21 @@ pub fn public_key_jwk(verifying_key: &VerifyingKey) -> serde_json::Value {
                 "y": URL_SAFE_NO_PAD.encode(y),
             })
         }
+    }
+}
+
+pub fn private_key_jwk(signing_key: &SigningKey) -> serde_json::Value {
+    match signing_key {
+        SigningKey::Ed25519 { key, .. } => serde_json::json!({
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "d": URL_SAFE_NO_PAD.encode(key.to_bytes()),
+        }),
+        SigningKey::Sm2 { key, .. } => serde_json::json!({
+            "kty": "EC",
+            "crv": "SM2",
+            "d": URL_SAFE_NO_PAD.encode(key.to_bytes()),
+        }),
     }
 }
 

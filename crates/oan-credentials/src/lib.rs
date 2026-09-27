@@ -9,7 +9,8 @@ use chrono::{DateTime, Utc};
 use oan_core::{CryptoSuite, DataIntegrityProof, ResourceType, SubjectType};
 use oan_crypto::{
     build_data_integrity_proof, hash_json_with_suite, signature_input, verify_payload_with_proof,
-    verifying_key_from_method, CryptoError, SigningKey, VerifyingKey,
+    public_key_jwk, signing_key_from_private_key_jwk, verifying_key_from_method, CryptoError,
+    SigningKey, VerifyingKey,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -310,6 +311,14 @@ impl OanIdentity {
         if method.public_key_jwk.as_ref() != Some(&self.public_key_jwk) {
             return Err(CredentialError::InvalidSubject);
         }
+        let suite = method
+            .crypto_suite()
+            .ok_or(CredentialError::InvalidSubject)?;
+        let signing_key = signing_key_from_private_key_jwk(suite, &self.private_key_jwk)
+            .map_err(|_| CredentialError::InvalidSubject)?;
+        if public_key_jwk(&signing_key.verifying_key()) != self.public_key_jwk {
+            return Err(CredentialError::InvalidSubject);
+        }
         self.did_document
             .validate_mvp()
             .map_err(|_| CredentialError::InvalidSubject)?;
@@ -533,11 +542,16 @@ where
 mod tests {
     use super::*;
     use chrono::Utc;
+    use oan_crypto::private_key_jwk;
     use oan_crypto::{generate_keypair, public_key_jwk};
     use serde_json::json;
 
     fn proof_for<T: Serialize>(payload: &T, key_id: &str, key: &SigningKey) -> CredentialProof {
         sign_credential(payload, key_id.to_owned(), key_id.to_owned(), key).unwrap()
+    }
+
+    fn private_jwk(key: &SigningKey) -> Value {
+        private_key_jwk(key)
     }
 
     #[test]
@@ -675,6 +689,93 @@ mod tests {
             identity.validate(),
             Err(CredentialError::InvalidSubject)
         ));
+    }
+
+    #[test]
+    fn identity_accepts_matching_private_key_jwk() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let method_id = format!("{did}#key-1");
+        let jwk = public_key_jwk(&key.verifying_key);
+        let mut document = oan_core::DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: did.clone(),
+            controller: Some(oan_core::DidController::Did(did.clone())),
+            verification_method: vec![oan_core::VerificationMethod {
+                id: method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: did.clone(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: None,
+                public_key_multibase: None,
+                public_key_jwk: Some(jwk.clone()),
+            }],
+            authentication: vec![method_id.clone()],
+            assertion_method: vec![method_id.clone()],
+            capability_invocation: vec![method_id.clone()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let unsigned = document.clone();
+        document.proof = Some(
+            build_data_integrity_proof(&unsigned, method_id.clone(), method_id.clone(), &key.signing_key)
+                .unwrap(),
+        );
+        let identity = OanIdentity {
+            id: "identity-1".to_owned(),
+            created_at: Utc::now().to_rfc3339(),
+            did,
+            verification_method_id: method_id,
+            did_document: document,
+            public_key_jwk: jwk,
+            private_key_jwk: private_jwk(&key.signing_key),
+        };
+        identity.validate().unwrap();
+    }
+
+    #[test]
+    fn identity_rejects_mismatched_private_key_jwk() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let other = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let method_id = format!("{did}#key-1");
+        let jwk = public_key_jwk(&key.verifying_key);
+        let mut document = oan_core::DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: did.clone(),
+            controller: Some(oan_core::DidController::Did(did.clone())),
+            verification_method: vec![oan_core::VerificationMethod {
+                id: method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: did.clone(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: None,
+                public_key_multibase: None,
+                public_key_jwk: Some(jwk.clone()),
+            }],
+            authentication: vec![method_id.clone()],
+            assertion_method: vec![method_id.clone()],
+            capability_invocation: vec![method_id.clone()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let unsigned = document.clone();
+        document.proof = Some(
+            build_data_integrity_proof(&unsigned, method_id.clone(), method_id.clone(), &key.signing_key)
+                .unwrap(),
+        );
+        let identity = OanIdentity {
+            id: "identity-1".to_owned(),
+            created_at: Utc::now().to_rfc3339(),
+            did,
+            verification_method_id: method_id,
+            did_document: document,
+            public_key_jwk: jwk,
+            private_key_jwk: private_jwk(&other.signing_key),
+        };
+        assert!(matches!(identity.validate(), Err(CredentialError::InvalidSubject)));
     }
 
     #[test]
