@@ -8,9 +8,9 @@
 use chrono::{DateTime, Utc};
 use oan_core::{CryptoSuite, DataIntegrityProof, ResourceType, SubjectType};
 use oan_crypto::{
-    build_data_integrity_proof, hash_json_with_suite, signature_input, verify_payload_with_proof,
-    public_key_jwk, signing_key_from_private_key_jwk, verifying_key_from_method, CryptoError,
-    SigningKey, VerifyingKey,
+    build_data_integrity_proof, hash_json_with_suite, public_key_jwk, signature_input,
+    signing_key_from_private_key_jwk, verify_payload_with_proof, verifying_key_from_method,
+    CryptoError, SigningKey, VerifyingKey,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -281,9 +281,11 @@ impl OanIdentity {
             .iter()
             .find(|method| method.id == self.verification_method_id)
             .ok_or(CredentialError::InvalidSubject)?;
-        if !self.did_document.controller.as_ref().is_some_and(|controller| {
-            controller.contains(&method.controller)
-        })
+        if !self
+            .did_document
+            .controller
+            .as_ref()
+            .is_some_and(|controller| controller.contains(&method.controller))
             || !self
                 .did_document
                 .authentication
@@ -297,14 +299,19 @@ impl OanIdentity {
         {
             return Err(CredentialError::InvalidSubject);
         }
-        if self.did_document.oan_metadata.as_ref().is_some_and(|metadata| {
-            metadata.subject_type == SubjectType::Controller
-                && metadata.resource_type == ResourceType::Controller
-        }) && !self
+        if self
             .did_document
-            .controller
+            .oan_metadata
             .as_ref()
-            .is_some_and(|controller| controller.contains(&self.did))
+            .is_some_and(|metadata| {
+                metadata.subject_type == SubjectType::Controller
+                    && metadata.resource_type == ResourceType::Controller
+            })
+            && !self
+                .did_document
+                .controller
+                .as_ref()
+                .is_some_and(|controller| controller.contains(&self.did))
         {
             return Err(CredentialError::InvalidSubject);
         }
@@ -453,7 +460,9 @@ pub fn validate_resource_registration_credential(
     Ok(())
 }
 
-fn validate_business_subject(subject: &BusinessFactCredentialSubject) -> Result<(), CredentialError> {
+fn validate_business_subject(
+    subject: &BusinessFactCredentialSubject,
+) -> Result<(), CredentialError> {
     if subject.id.is_empty() || subject.subject_type.is_empty() || subject.fact_type.is_empty() {
         return Err(CredentialError::InvalidSubject);
     }
@@ -501,8 +510,7 @@ pub fn validate_audit_result_credential(
 pub fn validate_self_claimed_capability_credential(
     credential: &OanSelfClaimedCapabilityCredential,
 ) -> Result<(), CredentialError> {
-    if credential.credential_type.as_slice()
-        != ["VerifiableCredential", VC_SELF_CLAIMED_CAPABILITY]
+    if credential.credential_type.as_slice() != ["VerifiableCredential", VC_SELF_CLAIMED_CAPABILITY]
     {
         return Err(CredentialError::InvalidType);
     }
@@ -719,8 +727,13 @@ mod tests {
         };
         let unsigned = document.clone();
         document.proof = Some(
-            build_data_integrity_proof(&unsigned, method_id.clone(), method_id.clone(), &key.signing_key)
-                .unwrap(),
+            build_data_integrity_proof(
+                &unsigned,
+                method_id.clone(),
+                method_id.clone(),
+                &key.signing_key,
+            )
+            .unwrap(),
         );
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
@@ -763,8 +776,13 @@ mod tests {
         };
         let unsigned = document.clone();
         document.proof = Some(
-            build_data_integrity_proof(&unsigned, method_id.clone(), method_id.clone(), &key.signing_key)
-                .unwrap(),
+            build_data_integrity_proof(
+                &unsigned,
+                method_id.clone(),
+                method_id.clone(),
+                &key.signing_key,
+            )
+            .unwrap(),
         );
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
@@ -775,7 +793,10 @@ mod tests {
             public_key_jwk: jwk,
             private_key_jwk: private_jwk(&other.signing_key),
         };
-        assert!(matches!(identity.validate(), Err(CredentialError::InvalidSubject)));
+        assert!(matches!(
+            identity.validate(),
+            Err(CredentialError::InvalidSubject)
+        ));
     }
 
     #[test]
@@ -822,7 +843,10 @@ mod tests {
             let mut credential = OanVerifiableCredential {
                 context: vec!["https://www.w3.org/2018/credentials/v1".to_owned()],
                 id: None,
-                credential_type: vec!["VerifiableCredential".to_owned(), credential_type.to_owned()],
+                credential_type: vec![
+                    "VerifiableCredential".to_owned(),
+                    credential_type.to_owned(),
+                ],
                 issuer: "did:oan:issuer".to_owned(),
                 issuance_date: Utc::now(),
                 expiration_date: None,
@@ -851,10 +875,14 @@ mod tests {
             json!({"id":"did:oan:subject","subjectType":"organization","auditType":"security","result":{},"auditedAt":Utc::now()}),
         )).unwrap()).unwrap();
         assert!(validate_audit_result_credential(&audit).is_ok());
-        let capability: OanSelfClaimedCapabilityCredential = serde_json::from_value(serde_json::to_value(base(
-            VC_SELF_CLAIMED_CAPABILITY,
-            json!({"id":"did:oan:subject","capability":"streaming","claim":{}}),
-        )).unwrap()).unwrap();
+        let capability: OanSelfClaimedCapabilityCredential = serde_json::from_value(
+            serde_json::to_value(base(
+                VC_SELF_CLAIMED_CAPABILITY,
+                json!({"id":"did:oan:subject","capability":"streaming","claim":{}}),
+            ))
+            .unwrap(),
+        )
+        .unwrap();
         assert!(validate_self_claimed_capability_credential(&capability).is_ok());
     }
 
