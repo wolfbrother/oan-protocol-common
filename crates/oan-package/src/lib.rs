@@ -184,7 +184,14 @@ impl ResourcePackage {
     }
 
     pub fn verify_resource_type_consistency(&self) -> Result<(), PackageError> {
+        let did_metadata = self
+            .did_document
+            .oan_metadata
+            .as_ref()
+            .ok_or(PackageError::ResourceTypeMismatch)?;
         if self.resource_type == self.metadata.resource_type
+            && self.metadata.subject_type == did_metadata.subject_type
+            && self.resource_type == did_metadata.resource_type
             && resource_type_matches_subject(&self.resource_type, &self.metadata.subject_type)
         {
             Ok(())
@@ -293,6 +300,19 @@ mod tests {
         assert!(package.verify_resource_type_consistency().is_ok());
         assert!(package.verify_metadata_consistency().is_ok());
         assert!(package.verify_root_claim_binding().is_ok());
+    }
+
+    #[test]
+    fn resource_package_rejects_did_document_type_mismatch() {
+        let mut package = sample_resource_package();
+        let metadata = package.did_document.oan_metadata.as_mut().unwrap();
+        metadata.subject_type = SubjectType::McpServer;
+        metadata.resource_type = ResourceType::McpServer;
+
+        assert!(matches!(
+            package.verify_resource_type_consistency(),
+            Err(PackageError::ResourceTypeMismatch)
+        ));
     }
 
     fn sample_resource_package() -> ResourcePackage {
