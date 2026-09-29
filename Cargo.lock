@@ -1134,11 +1134,16 @@ dependencies = [
 name = "oan-core"
 version = "1.0.1"
 dependencies = [
+ "base64",
+ "bs58",
  "chrono",
+ "ed25519-dalek",
+ "hex",
  "oan-did-oan",
  "oan-storage",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
  "url",

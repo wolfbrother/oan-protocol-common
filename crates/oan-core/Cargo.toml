@@ -10,10 +10,15 @@ keywords = ["oan", "protocol", "core"]
 categories = ["network-programming", "data-structures"]
 
 [dependencies]
+base64.workspace = true
+bs58.workspace = true
 chrono.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
 oan-did-oan = { path = "../oan-did-oan", version = "1.0.0" }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 url.workspace = true
 oan-storage = { path = "../oan-storage", version = "1.0.0" }
 thiserror.workspace = true
