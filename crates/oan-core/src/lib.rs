@@ -66,6 +66,21 @@ impl ProfileV2Jwk {
     }
 }
 
+fn decode_profile_v2_multibase(
+    value: &str,
+    expected_len: usize,
+    error: ProfileV2Error,
+) -> Result<Vec<u8>, ProfileV2Error> {
+    let encoded = value.strip_prefix('z').ok_or(error.clone())?;
+    let bytes = bs58::decode(encoded)
+        .into_vec()
+        .map_err(|_| error.clone())?;
+    if bytes.len() != expected_len || bs58::encode(&bytes).into_string() != encoded {
+        return Err(error);
+    }
+    Ok(bytes)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfileV2VerificationMethod {
@@ -115,14 +130,7 @@ impl ProfileV2CredentialProof {
         {
             return Err(ProfileV2Error::InvalidProof);
         }
-        let bytes = self
-            .proof_value
-            .strip_prefix('z')
-            .and_then(|value| bs58::decode(value).into_vec().ok())
-            .ok_or(ProfileV2Error::InvalidProof)?;
-        if bytes.len() != 64 {
-            return Err(ProfileV2Error::InvalidProof);
-        }
+        decode_profile_v2_multibase(&self.proof_value, 64, ProfileV2Error::InvalidProof)?;
         Ok(())
     }
 }
@@ -182,14 +190,7 @@ impl ProfileV2DataIntegrityProof {
         {
             return Err(ProfileV2Error::InvalidProof);
         }
-        let bytes = self
-            .proof_value
-            .strip_prefix('z')
-            .and_then(|value| bs58::decode(value).into_vec().ok())
-            .ok_or(ProfileV2Error::InvalidProof)?;
-        if bytes.len() != 64 {
-            return Err(ProfileV2Error::InvalidProof);
-        }
+        decode_profile_v2_multibase(&self.proof_value, 64, ProfileV2Error::InvalidProof)?;
         Ok(())
     }
 }
@@ -243,17 +244,23 @@ impl ProfileV2DidDocument {
         {
             return Err(ProfileV2Error::InvalidVerificationMethod);
         }
-        if let Some(multibase) = &method.public_key_multibase {
-            let key = multibase
-                .strip_prefix('z')
-                .and_then(|value| bs58::decode(value).into_vec().ok())
-                .ok_or(ProfileV2Error::InvalidVerificationMethod)?;
-            if key.len() != 32 {
-                return Err(ProfileV2Error::InvalidVerificationMethod);
-            }
-        }
+        let multibase_key = method
+            .public_key_multibase
+            .as_deref()
+            .map(|value| {
+                decode_profile_v2_multibase(value, 34, ProfileV2Error::InvalidVerificationMethod)
+            })
+            .transpose()?;
         if let Some(jwk) = &method.public_key_jwk {
             jwk.validate_ed25519(false)?;
+            if let Some(multibase_key) = multibase_key {
+                let jwk_key = URL_SAFE_NO_PAD
+                    .decode(&jwk.x)
+                    .map_err(|_| ProfileV2Error::InvalidVerificationMethod)?;
+                if multibase_key[..2] != [0xed, 0x01] || jwk_key != multibase_key[2..] {
+                    return Err(ProfileV2Error::InvalidVerificationMethod);
+                }
+            }
         }
         self.proof.validate_for(&self.id)
     }
@@ -374,7 +381,20 @@ impl ProfileV2OanIdentity {
             .iter()
             .find(|method| method.id == self.verification_method_id)
             .ok_or(ProfileV2Error::InvalidIdentity)?;
-        if method.public_key_jwk.as_ref() != Some(&self.public_key_jwk) {
+        if let Some(method_jwk) = &method.public_key_jwk {
+            if method_jwk != &self.public_key_jwk {
+                return Err(ProfileV2Error::InvalidIdentity);
+            }
+        } else if let Some(multibase) = &method.public_key_multibase {
+            let multibase_key =
+                decode_profile_v2_multibase(multibase, 34, ProfileV2Error::InvalidIdentity)?;
+            let public_key = URL_SAFE_NO_PAD
+                .decode(&self.public_key_jwk.x)
+                .map_err(|_| ProfileV2Error::InvalidIdentity)?;
+            if multibase_key[..2] != [0xed, 0x01] || public_key != multibase_key[2..] {
+                return Err(ProfileV2Error::InvalidIdentity);
+            }
+        } else {
             return Err(ProfileV2Error::InvalidIdentity);
         }
         let private_bytes = URL_SAFE_NO_PAD
@@ -396,7 +416,7 @@ impl ProfileV2OanIdentity {
     }
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum ProfileV2Error {
     #[error("invalid did:oan identifier")]
     InvalidDid,
@@ -1659,7 +1679,10 @@ mod tests {
                 id: key_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
                 controller: did.to_owned(),
-                public_key_multibase: Some(format!("z{}", bs58::encode([7u8; 32]).into_string())),
+                public_key_multibase: Some(format!(
+                    "z{}",
+                    bs58::encode([vec![0xed, 0x01], vec![7u8; 32]].concat()).into_string()
+                )),
                 public_key_jwk: None,
             }],
             authentication: vec![key_id.clone()],
@@ -1693,7 +1716,10 @@ mod tests {
                 id: key_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
                 controller: did.to_owned(),
-                public_key_multibase: Some(format!("z{}", bs58::encode([7u8; 32]).into_string())),
+                public_key_multibase: Some(format!(
+                    "z{}",
+                    bs58::encode([vec![0xed, 0x01], vec![7u8; 32]].concat()).into_string()
+                )),
                 public_key_jwk: None,
             }],
             authentication: vec![key_id.clone()],

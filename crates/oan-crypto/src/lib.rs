@@ -10,6 +10,7 @@ use ed25519_dalek::{
     Signature as Ed25519Signature, Signer as _, SigningKey as Ed25519SigningKey, Verifier as _,
     VerifyingKey as Ed25519VerifyingKey,
 };
+use iref::{IriBuf, UriBuf};
 use oan_core::{CryptoSuite, DataIntegrityProof, DidDocument, VerificationMethod};
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
@@ -19,6 +20,11 @@ use sm2::dsa::{
     Signature as Sm2Signature, SigningKey as Sm2SigningKey, VerifyingKey as Sm2VerifyingKey,
 };
 use sm3::{Digest as Sm3Digest, Sm3};
+use ssi_claims::data_integrity::{AnyDataIntegrity, AnySuite, CryptographicSuite, ProofOptions};
+use ssi_claims::VerificationParameters;
+use ssi_data_integrity::DataIntegrityDocument;
+use ssi_jwk::JWK;
+use ssi_verification_methods::{AnyMethod, Ed25519VerificationKey2020, SingleSecretSigner};
 use thiserror::Error;
 
 const DEFAULT_SM2_DISTINGUISHED_ID: &str = "1234567812345678";
@@ -43,6 +49,157 @@ pub enum CryptoError {
     MissingKeyMaterial,
     #[error("serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("standard Data Integrity operation failed: {0}")]
+    StandardDataIntegrity(String),
+}
+
+/// Sign a JSON-LD document with the standard Ed25519Signature2020 suite.
+///
+/// This is the strict Profile v2 path. It deliberately does not use the
+/// legacy OAN canonical-JSON/Base64URL path.
+pub async fn sign_profile_v2_data_integrity(
+    document: serde_json::Value,
+    did: &str,
+    private_key_jwk: serde_json::Value,
+) -> Result<serde_json::Value, CryptoError> {
+    let jwk: JWK = serde_json::from_value(private_key_jwk)
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let private_object = serde_json::to_value(&jwk)?;
+    let private_object = private_object
+        .as_object()
+        .ok_or(CryptoError::InvalidSigningKey)?;
+    if private_object.get("kty").and_then(|value| value.as_str()) != Some("OKP")
+        || private_object.get("crv").and_then(|value| value.as_str()) != Some("Ed25519")
+        || private_object.get("alg").and_then(|value| value.as_str()) == Some("Ed25519")
+    {
+        return Err(CryptoError::InvalidSigningKey);
+    }
+    let private_bytes = URL_SAFE_NO_PAD
+        .decode(
+            private_object
+                .get("d")
+                .and_then(|value| value.as_str())
+                .ok_or(CryptoError::MissingKeyMaterial)?,
+        )
+        .map_err(|_| CryptoError::InvalidSigningKey)?;
+    if private_bytes.len() != 32 {
+        return Err(CryptoError::InvalidSigningKey);
+    }
+    let private_bytes: [u8; 32] = private_bytes
+        .try_into()
+        .map_err(|_| CryptoError::InvalidSigningKey)?;
+    let signing_key = Ed25519SigningKey::from_bytes(&private_bytes);
+    let declared_public = URL_SAFE_NO_PAD
+        .decode(
+            private_object
+                .get("x")
+                .and_then(|value| value.as_str())
+                .ok_or(CryptoError::InvalidSigningKey)?,
+        )
+        .map_err(|_| CryptoError::InvalidSigningKey)?;
+    if declared_public != signing_key.verifying_key().to_bytes() {
+        return Err(CryptoError::InvalidSigningKey);
+    }
+    let verification_method = format!("{did}#key-1");
+    let method_id = IriBuf::new(verification_method.clone())
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let public_key_jwk: JWK = jwk.to_public();
+    let key = Ed25519VerificationKey2020::from_public_key(
+        method_id.clone(),
+        UriBuf::new(did.as_bytes().to_vec()).map_err(|_| CryptoError::InvalidPublicKeyEncoding)?,
+        ed25519_dalek::VerifyingKey::from_bytes(
+            &URL_SAFE_NO_PAD
+                .decode(
+                    serde_json::to_value(&public_key_jwk)?
+                        .get("x")
+                        .and_then(|value| value.as_str())
+                        .ok_or(CryptoError::InvalidPublicKeyEncoding)?,
+                )
+                .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?
+                .try_into()
+                .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?,
+        )
+        .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?,
+    );
+    let mut methods = std::collections::HashMap::<IriBuf, AnyMethod>::new();
+    methods.insert(method_id.clone(), key.into());
+    let input: DataIntegrityDocument = serde_json::from_value(document)
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let signed: AnyDataIntegrity = AnySuite::Ed25519Signature2020
+        .sign(
+            input,
+            &methods,
+            SingleSecretSigner::new(jwk).into_local(),
+            ProofOptions::from_method(method_id.into()),
+        )
+        .await
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    serde_json::to_value(signed).map_err(CryptoError::Serialization)
+}
+
+/// Verify a JSON-LD document with the standard Ed25519Signature2020 suite.
+pub async fn verify_profile_v2_data_integrity(
+    document: serde_json::Value,
+    public_key_jwk: serde_json::Value,
+) -> Result<(), CryptoError> {
+    let key: JWK = serde_json::from_value(public_key_jwk)
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let method_id = document
+        .get("proof")
+        .and_then(|proof| proof.get("verificationMethod"))
+        .and_then(|value| value.as_str())
+        .ok_or(CryptoError::InvalidProof)?;
+    let method_id = IriBuf::new(method_id.to_owned())
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    if !method_id.as_iri().to_string().ends_with("#key-1") {
+        return Err(CryptoError::InvalidProof);
+    }
+    let key_object = serde_json::to_value(key.to_public())?;
+    let key_object = key_object
+        .as_object()
+        .ok_or(CryptoError::InvalidVerifyingKey)?;
+    if key_object.get("kty").and_then(|value| value.as_str()) != Some("OKP")
+        || key_object.get("crv").and_then(|value| value.as_str()) != Some("Ed25519")
+        || key_object.get("alg").and_then(|value| value.as_str()) == Some("Ed25519")
+    {
+        return Err(CryptoError::InvalidVerifyingKey);
+    }
+    let controller = method_id
+        .as_iri()
+        .to_string()
+        .split('#')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    let public_key_bytes = URL_SAFE_NO_PAD
+        .decode(
+            serde_json::to_value(key.to_public())?
+                .get("x")
+                .and_then(|value| value.as_str())
+                .ok_or(CryptoError::InvalidPublicKeyEncoding)?,
+        )
+        .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?;
+    let key = Ed25519VerificationKey2020::from_public_key(
+        method_id.clone(),
+        UriBuf::new(controller.as_bytes().to_vec())
+            .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?,
+        ed25519_dalek::VerifyingKey::from_bytes(
+            &public_key_bytes
+                .try_into()
+                .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?,
+        )
+        .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?,
+    );
+    let mut methods = std::collections::HashMap::<IriBuf, AnyMethod>::new();
+    methods.insert(method_id, key.into());
+    let secured: AnyDataIntegrity = serde_json::from_value(document)
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    secured
+        .verify(VerificationParameters::from_resolver(methods))
+        .await
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    Ok(())
 }
 
 #[derive(Clone, Debug)]

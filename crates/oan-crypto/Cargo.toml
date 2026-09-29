@@ -22,5 +22,17 @@ serde_json.workspace = true
 sha2.workspace = true
 sm2.workspace = true
 sm3.workspace = true
+iref = "3.2"
+json-syntax = "0.12"
+ssi-claims = "0.7"
+ssi-claims-core = "0.2"
+ssi-data-integrity = { version = "0.4.0", features = ["w3c", "ed25519"] }
+ssi-dids = "0.5"
+ssi-jwk = "0.4"
+ssi-json-ld = "0.3"
+ssi-verification-methods = "0.3"
+static-iref = "3"
 thiserror.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
