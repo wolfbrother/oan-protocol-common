@@ -100,7 +100,8 @@
   "documentWithoutProof": {
     "@context": [
       "https://www.w3.org/ns/did/v1",
-      "https://w3id.org/oan/v1"
+      "https://openagenet.xyz/did-oan-specs/v1",
+      "https://w3id.org/security/suites/ed25519-2020/v1"
     ],
     "id": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
     "controller": "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo",
@@ -109,7 +110,6 @@
         "id": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1",
         "type": "Ed25519VerificationKey2020",
         "controller": "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo",
-        "cryptoSuite": "ed25519-sha256",
         "publicKeyMultibase": "z6Mkh8Example"
       }
     ],
@@ -160,16 +160,13 @@
   },
   "proof": {
     "type": "Ed25519Signature2020",
-    "creator": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1",
     "created": "2026-09-25T00:00:00Z",
     "proofPurpose": "assertionMethod",
     "proofValue": "fixture-proof-value",
-    "cryptoSuite": "ed25519-sha256",
-    "hashAlgorithm": "sha256",
     "verificationMethod": "did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1"
   },
-  "signatureInputCanonical": "{\"@context\":[\"https://www.w3.org/ns/did/v1\",\"https://w3id.org/oan/v1\"],\"assertionMethod\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"authentication\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"capabilityInvocation\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"controller\":\"did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo\",\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz\",\"oanMetadata\":{\"authorizedDomains\":[\"legal\"],\"capabilityTags\":[\"legal.contract.review\"],\"externalIdentifiers\":[{\"id\":\"urn:example:skill:contract-review\",\"resolutionServiceEndpoint\":\"https://resolver.example.org/ext/contract-review\"}],\"packageInfo\":{\"manifestUrl\":\"https://example.org/skill.json\",\"metadataHash\":\"sha256:meta\",\"packageHash\":\"sha256:pkg\"},\"resourceDescription\":{\"capabilityTags\":[\"legal.contract.review\"],\"description\":\"Review contracts.\",\"name\":\"Contract Review Skill\"},\"resourceType\":\"skill\",\"subjectType\":\"skill\"},\"service\":[{\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#manifest\",\"serviceEndpoint\":\"https://example.org/skill.json\",\"type\":\"OANSkillManifest\"}],\"verificationMethod\":[{\"controller\":\"did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo\",\"cryptoSuite\":\"ed25519-sha256\",\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\",\"publicKeyMultibase\":\"z6Mkh8Example\",\"type\":\"Ed25519VerificationKey2020\"}]}",
-  "completeDocumentHashSha256": "89b4c0b0c62b31c783719a43e049e70b4dfc6db5a2c73ce7096d49891725eec4",
-  "proofMutationHashSha256": "8446284155f251b3c9fd0b86e1c64de2700cc14ca91b5f74e0c275a9ee5bedcd",
-  "externalIdentifierMutationHashSha256": "ed9eb7439ab7328491d2f249e5d6d7d2da40812ef01f267feb11d68429bca483"
+  "signatureInputCanonical": "{\"@context\":[\"https://www.w3.org/ns/did/v1\",\"https://openagenet.xyz/did-oan-specs/v1\",\"https://w3id.org/security/suites/ed25519-2020/v1\"],\"assertionMethod\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"authentication\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"capabilityInvocation\":[\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\"],\"controller\":\"did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo\",\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz\",\"oanMetadata\":{\"authorizedDomains\":[\"legal\"],\"capabilityTags\":[\"legal.contract.review\"],\"externalIdentifiers\":[{\"id\":\"urn:example:skill:contract-review\",\"resolutionServiceEndpoint\":\"https://resolver.example.org/ext/contract-review\"}],\"packageInfo\":{\"manifestUrl\":\"https://example.org/skill.json\",\"metadataHash\":\"sha256:meta\",\"packageHash\":\"sha256:pkg\"},\"resourceDescription\":{\"capabilityTags\":[\"legal.contract.review\"],\"description\":\"Review contracts.\",\"name\":\"Contract Review Skill\"},\"resourceType\":\"skill\",\"subjectType\":\"skill\"},\"service\":[{\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#manifest\",\"serviceEndpoint\":\"https://example.org/skill.json\",\"type\":\"OANSkillManifest\"}],\"verificationMethod\":[{\"controller\":\"did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo\",\"id\":\"did:oan:K7mQ9:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1\",\"publicKeyMultibase\":\"z6Mkh8Example\",\"type\":\"Ed25519VerificationKey2020\"}]}",
+  "completeDocumentHashSha256": "e6ea4e9ea285402c990226ea0da1ce5a934175f09b42f1b42938dcf4e47e4692",
+  "proofMutationHashSha256": "bd08e80efbf0766e1d799fc3d5b1a9050cc02ac25b8a50ec26d2185b35ef6b69",
+  "externalIdentifierMutationHashSha256": "1fd8fa82e0c6c5a5bc52bc4594cb59fa274ac78cbdcd3cf53aae36014f3e0064"
 }

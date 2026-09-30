@@ -1088,6 +1088,12 @@ mod tests {
         );
 
         let document_without_proof = fixture["documentWithoutProof"].clone();
+        assert!(fixture["proof"].get("creator").is_none());
+        assert!(fixture["proof"].get("cryptoSuite").is_none());
+        assert!(fixture["proof"].get("hashAlgorithm").is_none());
+        assert!(document_without_proof["verificationMethod"][0]
+            .get("cryptoSuite")
+            .is_none());
         assert_eq!(
             String::from_utf8(
                 signature_input(CryptoSuite::Ed25519Sha256, &document_without_proof).unwrap()
