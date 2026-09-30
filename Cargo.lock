@@ -2703,7 +2703,9 @@ dependencies = [
 name = "oan-credentials"
 version = "1.0.1"
 dependencies = [
+ "bs58 0.5.1",
  "chrono",
+ "ed25519-dalek",
  "oan-core",
  "oan-crypto",
  "serde",

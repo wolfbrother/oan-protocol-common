@@ -449,6 +449,43 @@ pub fn sign_bytes(signing_key: &SigningKey, payload: &[u8]) -> Result<String, Cr
     }
 }
 
+pub fn sign_bytes_multibase(
+    signing_key: &SigningKey,
+    payload: &[u8],
+) -> Result<String, CryptoError> {
+    let signature = sign_bytes(signing_key, payload)?;
+    let signature = URL_SAFE_NO_PAD
+        .decode(signature)
+        .map_err(|_| CryptoError::InvalidSignature)?;
+    Ok(format!("z{}", bs58::encode(signature).into_string()))
+}
+
+pub fn verify_bytes_multibase(
+    verifying_key: &VerifyingKey,
+    payload: &[u8],
+    signature_multibase: &str,
+) -> Result<(), CryptoError> {
+    let encoded = signature_multibase
+        .strip_prefix('z')
+        .ok_or(CryptoError::InvalidSignature)?;
+    let signature = bs58::decode(encoded)
+        .into_vec()
+        .map_err(|_| CryptoError::InvalidSignature)?;
+    if signature.len() != 64 {
+        return Err(CryptoError::InvalidSignature);
+    }
+    match verifying_key {
+        VerifyingKey::Ed25519 { key, .. } => key
+            .verify(
+                payload,
+                &Ed25519Signature::from_slice(&signature)
+                    .map_err(|_| CryptoError::InvalidSignature)?,
+            )
+            .map_err(|_| CryptoError::VerificationFailed),
+        VerifyingKey::Sm2 { .. } => Err(CryptoError::UnsupportedCryptoSuite),
+    }
+}
+
 pub fn sign_legacy_ed25519_bytes(signing_key: &Ed25519SigningKey, payload: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(signing_key.sign(payload).to_bytes())
 }
@@ -728,6 +765,29 @@ mod tests {
 
         verify_bytes(&keypair.verifying_key, b"hello", &signature).unwrap();
         assert!(verify_bytes(&keypair.verifying_key, b"HELLO", &signature).is_err());
+    }
+
+    #[test]
+    fn signs_ed25519_payload_as_multibase() {
+        let keypair = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let signature = sign_bytes_multibase(&keypair.signing_key, b"hello").unwrap();
+        assert!(signature.starts_with('z'));
+        let bytes = bs58::decode(&signature[1..]).into_vec().unwrap();
+        assert_eq!(bytes.len(), 64);
+        match keypair.verifying_key {
+            VerifyingKey::Ed25519 { key, .. } => key
+                .verify(b"hello", &Ed25519Signature::from_slice(&bytes).unwrap())
+                .unwrap(),
+            VerifyingKey::Sm2 { .. } => panic!("expected Ed25519 key"),
+        }
+        verify_bytes_multibase(
+            &generate_keypair(CryptoSuite::Ed25519Sha256)
+                .unwrap()
+                .verifying_key,
+            b"hello",
+            &signature,
+        )
+        .expect_err("different key must not verify");
     }
 
     #[test]
