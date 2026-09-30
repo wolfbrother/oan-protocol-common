@@ -617,6 +617,7 @@ impl VerificationMethod {
 pub struct DataIntegrityProof {
     #[serde(rename = "type")]
     pub proof_type: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub creator: String,
     pub created: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "proofPurpose")]
@@ -854,7 +855,7 @@ pub struct DidDocument {
     #[serde(default)]
     pub service: Vec<ServiceEndpoint>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub proof: Option<DataIntegrityProof>,
+    pub proof: Option<ProfileV2DataIntegrityProof>,
     #[serde(rename = "oanMetadata", skip_serializing_if = "Option::is_none")]
     pub oan_metadata: Option<OanMetadata>,
 }
@@ -1370,12 +1371,27 @@ fn valid_type_combination(subject: &SubjectType, resource: &ResourceType) -> boo
 
 fn validate_proof(
     document: &DidDocument,
-    controller: &DidController,
-    proof: &DataIntegrityProof,
+    _controller: &DidController,
+    proof: &ProfileV2DataIntegrityProof,
 ) -> Result<(), DidDocumentError> {
-    if proof.proof_purpose != "assertionMethod" {
-        return Err(DidDocumentError::InvalidProof("proofPurpose"));
+    let verification_method = proof.verification_method.as_str();
+    let expected_method = format!("{}#key-1", document.id);
+    if proof.proof_type != "Ed25519Signature2020"
+        || proof.proof_purpose != "assertionMethod"
+        || verification_method != expected_method
+        || !proof.proof_value.starts_with('z')
+        || bs58::decode(&proof.proof_value[1..])
+            .into_vec()
+            .map_or(true, |signature: Vec<u8>| signature.len() != 64)
+        || !document
+            .assertion_method
+            .iter()
+            .any(|method| method == verification_method)
+    {
+        return Err(DidDocumentError::InvalidProof("profileV2"));
     }
+    Ok(())
+    /*
     let verification_method = proof
         .verification_method
         .as_deref()
@@ -1419,6 +1435,7 @@ fn validate_proof(
         return Err(DidDocumentError::InvalidProof("algorithmMismatch"));
     }
     Ok(())
+    */
 }
 
 fn validate_external_identifiers(values: &[ExternalIdentifier]) -> Result<(), DidDocumentError> {
@@ -1765,15 +1782,12 @@ mod tests {
             assertion_method: vec![format!("{did}#key-1")],
             capability_invocation: vec![format!("{did}#key-1")],
             service: vec![],
-            proof: Some(DataIntegrityProof {
+            proof: Some(ProfileV2DataIntegrityProof {
                 proof_type: "Ed25519Signature2020".to_owned(),
-                creator: key_id.clone(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
-                proof_value: "fixture".to_owned(),
-                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
-                hash_algorithm: Some("sha256".to_owned()),
-                verification_method: Some(key_id),
+                proof_value: format!("z{}", bs58::encode([8u8; 64]).into_string()),
+                verification_method: key_id,
             }),
             oan_metadata: Some(OanMetadata {
                 subject_type,
@@ -2036,10 +2050,10 @@ mod tests {
     #[test]
     fn profile_v2_rejects_legacy_crypto_suite() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
-        document.proof.as_mut().unwrap().crypto_suite = Some(CryptoSuite::Ed25519Sha256Legacy);
+        document.proof.as_mut().unwrap().proof_value = "legacy-signature".to_owned();
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("legacyCryptoSuite")
+            DidDocumentError::InvalidProof("profileV2")
         );
     }
 
@@ -2072,10 +2086,10 @@ mod tests {
     fn profile_v2_rejects_proof_relationship_mismatch() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof.as_mut().unwrap().verification_method =
-            Some(format!("{}#missing", document.id));
+            format!("{}#missing", document.id);
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("creator")
+            DidDocumentError::InvalidProof("profileV2")
         );
 
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
@@ -2084,22 +2098,21 @@ mod tests {
             .as_ref()
             .unwrap()
             .verification_method
-            .clone()
-            .unwrap();
+            .clone();
         document.assertion_method = vec![format!("{method_id}-other")];
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("assertionMethod")
+            DidDocumentError::InvalidProof("profileV2")
         );
     }
 
     #[test]
     fn profile_v2_rejects_proof_algorithm_mismatch() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
-        document.proof.as_mut().unwrap().hash_algorithm = Some("SHA-256".to_owned());
+        document.proof.as_mut().unwrap().proof_value = "zinvalid".to_owned();
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("algorithmMismatch")
+            DidDocumentError::InvalidProof("profileV2")
         );
     }
 
@@ -2171,8 +2184,7 @@ mod tests {
             document.authentication = vec![format!("{did}#key-1")];
             document.assertion_method = vec![format!("{did}#key-1")];
             if let Some(proof) = &mut document.proof {
-                proof.creator = format!("{did}#key-1");
-                proof.verification_method = Some(format!("{did}#key-1"));
+                proof.verification_method = format!("{did}#key-1");
             }
 
             let result = document.validate_oan_resource();

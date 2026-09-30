@@ -11,7 +11,7 @@ use oan_core::{
 };
 use oan_crypto::{
     hash_json_with_suite, public_key_jwk, signature_input, signing_key_from_private_key_jwk,
-    verify_payload_with_proof, verify_profile_v2_payload, verifying_key_from_method, CryptoError,
+    verify_profile_v2_payload, verifying_key_from_method, CryptoError,
     SigningKey, VerifyingKey,
 };
 use ed25519_dalek::Signer;
@@ -300,10 +300,10 @@ impl OanIdentity {
         if method.public_key_jwk.as_ref() != Some(&self.public_key_jwk) {
             return Err(CredentialError::InvalidSubject);
         }
-        let suite = method
-            .crypto_suite()
-            .ok_or(CredentialError::InvalidSubject)?;
-        let signing_key = signing_key_from_private_key_jwk(suite, &self.private_key_jwk)
+        let signing_key = signing_key_from_private_key_jwk(
+            CryptoSuite::Ed25519Sha256,
+            &self.private_key_jwk,
+        )
             .map_err(|_| CredentialError::InvalidSubject)?;
         if public_key_jwk(&signing_key.verifying_key()) != self.public_key_jwk {
             return Err(CredentialError::InvalidSubject);
@@ -316,16 +316,21 @@ impl OanIdentity {
             .proof
             .as_ref()
             .ok_or(CredentialError::InvalidSubject)?;
-        if proof.verification_method.as_deref() != Some(self.verification_method_id.as_str())
-            || proof.creator != self.verification_method_id
-        {
+        if proof.verification_method != self.verification_method_id {
             return Err(CredentialError::InvalidSubject);
         }
         let verifying_key =
             verifying_key_from_method(method).map_err(|_| CredentialError::InvalidSubject)?;
         let mut unsigned = self.did_document.clone();
         unsigned.proof = None;
-        verify_payload_with_proof(&unsigned, proof, &verifying_key)
+        let proof = ProfileV2CredentialProof {
+            proof_type: proof.proof_type.clone(),
+            created: proof.created,
+            proof_purpose: proof.proof_purpose.clone(),
+            proof_value: proof.proof_value.clone(),
+            verification_method: proof.verification_method.clone(),
+        };
+        verify_profile_v2_payload(&unsigned, &proof, &verifying_key)
             .map_err(|_| CredentialError::InvalidSignature)?;
         Ok(())
     }
