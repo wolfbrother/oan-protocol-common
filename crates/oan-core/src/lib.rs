@@ -21,7 +21,7 @@ pub const DID_OAN_CONTEXTS: [&str; 3] = [
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2Jwk {
+pub struct OanJwk {
     pub kty: String,
     pub crv: String,
     pub x: String,
@@ -31,8 +31,8 @@ pub struct ProfileV2Jwk {
     pub alg: Option<String>,
 }
 
-impl ProfileV2Jwk {
-    pub fn validate_ed25519(&self, private: bool) -> Result<(), ProfileV2Error> {
+impl OanJwk {
+    pub fn validate_ed25519(&self, private: bool) -> Result<(), OanProfileError> {
         if self.kty != "OKP"
             || self.crv != "Ed25519"
             || self.x.is_empty()
@@ -40,37 +40,37 @@ impl ProfileV2Jwk {
             || (!private && self.d.is_some())
             || self.alg.as_deref() == Some("Ed25519")
         {
-            return Err(ProfileV2Error::InvalidJwk);
+            return Err(OanProfileError::InvalidJwk);
         }
         let public_key = URL_SAFE_NO_PAD
             .decode(&self.x)
-            .map_err(|_| ProfileV2Error::InvalidJwk)?;
+            .map_err(|_| OanProfileError::InvalidJwk)?;
         if public_key.len() != 32 {
-            return Err(ProfileV2Error::InvalidJwk);
+            return Err(OanProfileError::InvalidJwk);
         }
         if private
             && URL_SAFE_NO_PAD
                 .decode(self.d.as_deref().unwrap_or_default())
-                .map_err(|_| ProfileV2Error::InvalidJwk)?
+                .map_err(|_| OanProfileError::InvalidJwk)?
                 .len()
                 != 32
         {
-            return Err(ProfileV2Error::InvalidJwk);
+            return Err(OanProfileError::InvalidJwk);
         }
         if let Some(alg) = &self.alg {
             if alg != "EdDSA" {
-                return Err(ProfileV2Error::InvalidJwk);
+                return Err(OanProfileError::InvalidJwk);
             }
         }
         Ok(())
     }
 }
 
-fn decode_profile_v2_multibase(
+fn decode_oan_multibase(
     value: &str,
     expected_len: usize,
-    error: ProfileV2Error,
-) -> Result<Vec<u8>, ProfileV2Error> {
+    error: OanProfileError,
+) -> Result<Vec<u8>, OanProfileError> {
     let encoded = value.strip_prefix('z').ok_or(error.clone())?;
     let bytes = bs58::decode(encoded)
         .into_vec()
@@ -83,7 +83,7 @@ fn decode_profile_v2_multibase(
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2VerificationMethod {
+pub struct OanVerificationMethod {
     pub id: String,
     #[serde(rename = "type")]
     pub method_type: String,
@@ -91,12 +91,12 @@ pub struct ProfileV2VerificationMethod {
     #[serde(rename = "publicKeyMultibase", skip_serializing_if = "Option::is_none")]
     pub public_key_multibase: Option<String>,
     #[serde(rename = "publicKeyJwk", skip_serializing_if = "Option::is_none")]
-    pub public_key_jwk: Option<ProfileV2Jwk>,
+    pub public_key_jwk: Option<OanJwk>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2DataIntegrityProof {
+pub struct OanDataIntegrityProof {
     #[serde(rename = "type")]
     pub proof_type: String,
     pub created: chrono::DateTime<chrono::Utc>,
@@ -110,7 +110,7 @@ pub struct ProfileV2DataIntegrityProof {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2CredentialProof {
+pub struct OanCredentialProof {
     #[serde(rename = "type")]
     pub proof_type: String,
     pub created: chrono::DateTime<chrono::Utc>,
@@ -122,22 +122,22 @@ pub struct ProfileV2CredentialProof {
     pub verification_method: String,
 }
 
-impl ProfileV2CredentialProof {
-    pub fn validate_for(&self, issuer: &str) -> Result<(), ProfileV2Error> {
+impl OanCredentialProof {
+    pub fn validate_for(&self, issuer: &str) -> Result<(), OanProfileError> {
         if self.proof_type != "Ed25519Signature2020"
             || self.proof_purpose != "assertionMethod"
             || self.verification_method != format!("{issuer}#key-1")
         {
-            return Err(ProfileV2Error::InvalidProof);
+            return Err(OanProfileError::InvalidProof);
         }
-        decode_profile_v2_multibase(&self.proof_value, 64, ProfileV2Error::InvalidProof)?;
+        decode_oan_multibase(&self.proof_value, 64, OanProfileError::InvalidProof)?;
         Ok(())
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2VerifiableCredential {
+pub struct OanVerifiableCredential {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(rename = "type")]
@@ -155,11 +155,11 @@ pub struct ProfileV2VerifiableCredential {
     pub credential_status: Option<serde_json::Value>,
     #[serde(rename = "credentialSchema", skip_serializing_if = "Option::is_none")]
     pub credential_schema: Option<serde_json::Value>,
-    pub proof: ProfileV2CredentialProof,
+    pub proof: OanCredentialProof,
 }
 
-impl ProfileV2VerifiableCredential {
-    pub fn validate(&self) -> Result<(), ProfileV2Error> {
+impl OanVerifiableCredential {
+    pub fn validate(&self) -> Result<(), OanProfileError> {
         if self.context
             != [
                 "https://www.w3.org/2018/credentials/v1".to_owned(),
@@ -167,7 +167,7 @@ impl ProfileV2VerifiableCredential {
                 "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
             ]
         {
-            return Err(ProfileV2Error::InvalidContext);
+            return Err(OanProfileError::InvalidContext);
         }
         if self.credential_type.is_empty()
             || !self
@@ -175,36 +175,36 @@ impl ProfileV2VerifiableCredential {
                 .iter()
                 .any(|value| value == "VerifiableCredential")
         {
-            return Err(ProfileV2Error::InvalidCredential);
+            return Err(OanProfileError::InvalidCredential);
         }
-        oan_did_oan::DidOan::parse(&self.issuer).map_err(|_| ProfileV2Error::InvalidDid)?;
+        oan_did_oan::DidOan::parse(&self.issuer).map_err(|_| OanProfileError::InvalidDid)?;
         self.proof.validate_for(&self.issuer)
     }
 }
 
-impl ProfileV2DataIntegrityProof {
-    pub fn validate_for(&self, did: &str) -> Result<(), ProfileV2Error> {
+impl OanDataIntegrityProof {
+    pub fn validate_for(&self, did: &str) -> Result<(), OanProfileError> {
         if self.proof_type != "Ed25519Signature2020"
             || self.proof_purpose != "assertionMethod"
             || self.verification_method != format!("{did}#key-1")
         {
-            return Err(ProfileV2Error::InvalidProof);
+            return Err(OanProfileError::InvalidProof);
         }
-        decode_profile_v2_multibase(&self.proof_value, 64, ProfileV2Error::InvalidProof)?;
+        decode_oan_multibase(&self.proof_value, 64, OanProfileError::InvalidProof)?;
         Ok(())
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2DidDocument {
+pub struct OanDidDocument {
     #[serde(rename = "@context")]
     pub context: Vec<String>,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub controller: Option<DidController>,
     #[serde(rename = "verificationMethod")]
-    pub verification_method: Vec<ProfileV2VerificationMethod>,
+    pub verification_method: Vec<OanVerificationMethod>,
     pub authentication: Vec<String>,
     #[serde(rename = "assertionMethod")]
     pub assertion_method: Vec<String>,
@@ -212,29 +212,29 @@ pub struct ProfileV2DidDocument {
     pub capability_invocation: Vec<String>,
     #[serde(default)]
     pub service: Vec<serde_json::Value>,
-    pub proof: ProfileV2DataIntegrityProof,
+    pub proof: OanDataIntegrityProof,
     #[serde(rename = "oanMetadata", default)]
     pub oan_metadata: Option<serde_json::Value>,
 }
 
-impl ProfileV2DidDocument {
-    pub fn validate(&self) -> Result<(), ProfileV2Error> {
+impl OanDidDocument {
+    pub fn validate(&self) -> Result<(), OanProfileError> {
         if self.context.iter().map(String::as_str).collect::<Vec<_>>() != DID_OAN_CONTEXTS {
-            return Err(ProfileV2Error::InvalidContext);
+            return Err(OanProfileError::InvalidContext);
         }
-        oan_did_oan::DidOan::parse(&self.id).map_err(|_| ProfileV2Error::InvalidDid)?;
+        oan_did_oan::DidOan::parse(&self.id).map_err(|_| OanProfileError::InvalidDid)?;
         let key_id = format!("{}#key-1", self.id);
         let method = self
             .verification_method
             .iter()
             .find(|method| method.id == key_id)
-            .ok_or(ProfileV2Error::InvalidVerificationMethod)?;
+            .ok_or(OanProfileError::InvalidVerificationMethod)?;
         if method.method_type != "Ed25519VerificationKey2020"
             || method.public_key_multibase.is_none() && method.public_key_jwk.is_none()
             || !self.authentication.iter().any(|value| value == &key_id)
             || !self.assertion_method.iter().any(|value| value == &key_id)
         {
-            return Err(ProfileV2Error::InvalidVerificationMethod);
+            return Err(OanProfileError::InvalidVerificationMethod);
         }
         if !self
             .controller
@@ -242,13 +242,13 @@ impl ProfileV2DidDocument {
             .is_some_and(|controller| controller.contains(&method.controller))
             && method.controller != self.id
         {
-            return Err(ProfileV2Error::InvalidVerificationMethod);
+            return Err(OanProfileError::InvalidVerificationMethod);
         }
         let multibase_key = method
             .public_key_multibase
             .as_deref()
             .map(|value| {
-                decode_profile_v2_multibase(value, 34, ProfileV2Error::InvalidVerificationMethod)
+                decode_oan_multibase(value, 34, OanProfileError::InvalidVerificationMethod)
             })
             .transpose()?;
         if let Some(jwk) = &method.public_key_jwk {
@@ -256,9 +256,9 @@ impl ProfileV2DidDocument {
             if let Some(multibase_key) = multibase_key {
                 let jwk_key = URL_SAFE_NO_PAD
                     .decode(&jwk.x)
-                    .map_err(|_| ProfileV2Error::InvalidVerificationMethod)?;
+                    .map_err(|_| OanProfileError::InvalidVerificationMethod)?;
                 if multibase_key[..2] != [0xed, 0x01] || jwk_key != multibase_key[2..] {
-                    return Err(ProfileV2Error::InvalidVerificationMethod);
+                    return Err(OanProfileError::InvalidVerificationMethod);
                 }
             }
         }
@@ -266,7 +266,7 @@ impl ProfileV2DidDocument {
     }
 }
 
-pub fn profile_v2_canonical_json(value: &serde_json::Value) -> String {
+pub fn oan_canonical_json(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => "null".to_owned(),
         serde_json::Value::Bool(value) => value.to_string(),
@@ -276,7 +276,7 @@ pub fn profile_v2_canonical_json(value: &serde_json::Value) -> String {
             "[{}]",
             values
                 .iter()
-                .map(profile_v2_canonical_json)
+                .map(oan_canonical_json)
                 .collect::<Vec<_>>()
                 .join(",")
         ),
@@ -290,7 +290,7 @@ pub fn profile_v2_canonical_json(value: &serde_json::Value) -> String {
                         format!(
                             "{}:{}",
                             serde_json::to_string(key).unwrap(),
-                            profile_v2_canonical_json(&values[*key])
+                            oan_canonical_json(&values[*key])
                         )
                     })
                     .collect::<Vec<_>>()
@@ -300,22 +300,22 @@ pub fn profile_v2_canonical_json(value: &serde_json::Value) -> String {
     }
 }
 
-pub fn profile_v2_signature_input(
-    document: &ProfileV2DidDocument,
-) -> Result<Vec<u8>, ProfileV2Error> {
-    let mut value = serde_json::to_value(document).map_err(|_| ProfileV2Error::InvalidProof)?;
+pub fn oan_signature_input(
+    document: &OanDidDocument,
+) -> Result<Vec<u8>, OanProfileError> {
+    let mut value = serde_json::to_value(document).map_err(|_| OanProfileError::InvalidProof)?;
     value
         .as_object_mut()
-        .ok_or(ProfileV2Error::InvalidProof)?
+        .ok_or(OanProfileError::InvalidProof)?
         .remove("proof");
-    Ok(profile_v2_canonical_json(&value).into_bytes())
+    Ok(oan_canonical_json(&value).into_bytes())
 }
 
-pub fn profile_v2_did_document_hash(
-    document: &ProfileV2DidDocument,
-) -> Result<String, ProfileV2Error> {
-    let value = serde_json::to_value(document).map_err(|_| ProfileV2Error::InvalidProof)?;
-    let canonical = profile_v2_canonical_json(&value);
+pub fn oan_did_document_hash(
+    document: &OanDidDocument,
+) -> Result<String, OanProfileError> {
+    let value = serde_json::to_value(document).map_err(|_| OanProfileError::InvalidProof)?;
+    let canonical = oan_canonical_json(&value);
     Ok(format!(
         "sha256:{}",
         hex::encode(Sha256::digest(canonical.as_bytes()))
@@ -324,7 +324,7 @@ pub fn profile_v2_did_document_hash(
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2PublicIdentity {
+pub struct OanPublicIdentity {
     pub id: String,
     #[serde(rename = "createdAt")]
     pub created_at: String,
@@ -332,14 +332,14 @@ pub struct ProfileV2PublicIdentity {
     #[serde(rename = "verificationMethodId")]
     pub verification_method_id: String,
     #[serde(rename = "didDocument")]
-    pub did_document: ProfileV2DidDocument,
+    pub did_document: OanDidDocument,
     #[serde(rename = "publicKeyJwk")]
-    pub public_key_jwk: ProfileV2Jwk,
+    pub public_key_jwk: OanJwk,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProfileV2OanIdentity {
+pub struct OanIdentity {
     pub id: String,
     #[serde(rename = "createdAt")]
     pub created_at: String,
@@ -347,16 +347,16 @@ pub struct ProfileV2OanIdentity {
     #[serde(rename = "verificationMethodId")]
     pub verification_method_id: String,
     #[serde(rename = "didDocument")]
-    pub did_document: ProfileV2DidDocument,
+    pub did_document: OanDidDocument,
     #[serde(rename = "publicKeyJwk")]
-    pub public_key_jwk: ProfileV2Jwk,
+    pub public_key_jwk: OanJwk,
     #[serde(rename = "privateKeyJwk")]
-    pub private_key_jwk: ProfileV2Jwk,
+    pub private_key_jwk: OanJwk,
 }
 
-impl ProfileV2OanIdentity {
-    pub fn public_projection(&self) -> ProfileV2PublicIdentity {
-        ProfileV2PublicIdentity {
+impl OanIdentity {
+    pub fn public_projection(&self) -> OanPublicIdentity {
+        OanPublicIdentity {
             id: self.id.clone(),
             created_at: self.created_at.clone(),
             did: self.did.clone(),
@@ -366,12 +366,12 @@ impl ProfileV2OanIdentity {
         }
     }
 
-    pub fn validate(&self) -> Result<(), ProfileV2Error> {
+    pub fn validate(&self) -> Result<(), OanProfileError> {
         if self.did != self.did_document.id
             || self.verification_method_id != format!("{}#key-1", self.did)
             || self.did_document.validate().is_err()
         {
-            return Err(ProfileV2Error::InvalidIdentity);
+            return Err(OanProfileError::InvalidIdentity);
         }
         self.public_key_jwk.validate_ed25519(false)?;
         self.private_key_jwk.validate_ed25519(true)?;
@@ -380,44 +380,44 @@ impl ProfileV2OanIdentity {
             .verification_method
             .iter()
             .find(|method| method.id == self.verification_method_id)
-            .ok_or(ProfileV2Error::InvalidIdentity)?;
+            .ok_or(OanProfileError::InvalidIdentity)?;
         if let Some(method_jwk) = &method.public_key_jwk {
             if method_jwk != &self.public_key_jwk {
-                return Err(ProfileV2Error::InvalidIdentity);
+                return Err(OanProfileError::InvalidIdentity);
             }
         } else if let Some(multibase) = &method.public_key_multibase {
             let multibase_key =
-                decode_profile_v2_multibase(multibase, 34, ProfileV2Error::InvalidIdentity)?;
+                decode_oan_multibase(multibase, 34, OanProfileError::InvalidIdentity)?;
             let public_key = URL_SAFE_NO_PAD
                 .decode(&self.public_key_jwk.x)
-                .map_err(|_| ProfileV2Error::InvalidIdentity)?;
+                .map_err(|_| OanProfileError::InvalidIdentity)?;
             if multibase_key[..2] != [0xed, 0x01] || public_key != multibase_key[2..] {
-                return Err(ProfileV2Error::InvalidIdentity);
+                return Err(OanProfileError::InvalidIdentity);
             }
         } else {
-            return Err(ProfileV2Error::InvalidIdentity);
+            return Err(OanProfileError::InvalidIdentity);
         }
         let private_bytes = URL_SAFE_NO_PAD
             .decode(self.private_key_jwk.d.as_deref().unwrap_or_default())
-            .map_err(|_| ProfileV2Error::InvalidIdentity)?;
+            .map_err(|_| OanProfileError::InvalidIdentity)?;
         let private_bytes: [u8; 32] = private_bytes
             .try_into()
-            .map_err(|_| ProfileV2Error::InvalidIdentity)?;
+            .map_err(|_| OanProfileError::InvalidIdentity)?;
         let signing_key = SigningKey::from_bytes(&private_bytes);
         if signing_key.verifying_key().to_bytes()
             != URL_SAFE_NO_PAD
                 .decode(&self.public_key_jwk.x)
-                .map_err(|_| ProfileV2Error::InvalidIdentity)?
+                .map_err(|_| OanProfileError::InvalidIdentity)?
                 .as_slice()
         {
-            return Err(ProfileV2Error::InvalidIdentity);
+            return Err(OanProfileError::InvalidIdentity);
         }
         Ok(())
     }
 }
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
-pub enum ProfileV2Error {
+pub enum OanProfileError {
     #[error("invalid did:oan identifier")]
     InvalidDid,
     #[error("invalid did document context")]
@@ -460,7 +460,7 @@ impl CryptoSuite {
         }
     }
 
-    /// Canonical profile-v2 spelling used in serialized proofs.
+    /// Canonical current did:oan spelling used in serialized proofs.
     pub fn canonical_hash_algorithm(&self) -> &'static str {
         match self {
             Self::Ed25519Sha256Legacy | Self::Ed25519Sha256 => "sha256",
@@ -1203,7 +1203,7 @@ pub enum DidDocumentError {
     MissingOanMetadata,
     #[error("oan subject type and resource type must match for discoverable resources")]
     ResourceTypeMismatch,
-    #[error("did:oan identifier does not match profile-v2 syntax")]
+    #[error("did:oan identifier does not match current did:oan syntax")]
     InvalidDidOanIdentifier,
     #[error("did document controller is required")]
     MissingController,
@@ -1392,7 +1392,7 @@ fn validate_proof(
             .iter()
             .any(|method| method == verification_method)
     {
-        return Err(DidDocumentError::InvalidProof("profileV2"));
+        return Err(DidDocumentError::InvalidProof("did:oan"));
     }
     Ok(())
     /*
@@ -1493,9 +1493,9 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn profile_v2_fixture_contract_is_stable() {
+    fn oan_fixture_contract_is_stable() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../test-fixtures/did-oan-profile-v2-contract.json"
+            "../../../test-fixtures/did-oan-contract.json"
         ))
         .unwrap();
         assert_eq!(fixture["contexts"], serde_json::json!(DID_OAN_CONTEXTS));
@@ -1510,7 +1510,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_proof_rejects_legacy_fields_on_deserialization() {
+    fn oan_proof_rejects_legacy_fields_on_deserialization() {
         let value = serde_json::json!({
             "type": "Ed25519Signature2020",
             "created": "2026-09-29T00:00:00Z",
@@ -1519,23 +1519,23 @@ mod tests {
             "verificationMethod": "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu#key-1",
             "creator": "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu#key-1"
         });
-        assert!(serde_json::from_value::<ProfileV2DataIntegrityProof>(value).is_err());
+        assert!(serde_json::from_value::<OanDataIntegrityProof>(value).is_err());
     }
 
     #[test]
-    fn profile_v2_jwk_rejects_nonstandard_alg() {
-        let jwk = ProfileV2Jwk {
+    fn oan_jwk_rejects_nonstandard_alg() {
+        let jwk = OanJwk {
             kty: "OKP".to_owned(),
             crv: "Ed25519".to_owned(),
             x: "AQ".to_owned(),
             d: None,
             alg: Some("Ed25519".to_owned()),
         };
-        assert_eq!(jwk.validate_ed25519(false), Err(ProfileV2Error::InvalidJwk));
+        assert_eq!(jwk.validate_ed25519(false), Err(OanProfileError::InvalidJwk));
     }
 
     #[test]
-    fn profile_v2_credential_rejects_legacy_proof_fields() {
+    fn oan_credential_rejects_legacy_proof_fields() {
         let value = serde_json::json!({
             "@context": [
                 "https://www.w3.org/2018/credentials/v1",
@@ -1553,12 +1553,12 @@ mod tests {
                 "hashAlgorithm": "sha256"
             }
         });
-        assert!(serde_json::from_value::<ProfileV2VerifiableCredential>(value).is_err());
+        assert!(serde_json::from_value::<OanVerifiableCredential>(value).is_err());
     }
 
     #[test]
-    fn profile_v2_credential_requires_fixed_context_and_multibase_proof() {
-        let credential = ProfileV2VerifiableCredential {
+    fn oan_credential_requires_fixed_context_and_multibase_proof() {
+        let credential = OanVerifiableCredential {
             id: None,
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
@@ -1575,7 +1575,7 @@ mod tests {
             credential_subject: json!({"id": "did:oan:K7mQ9:subject"}),
             credential_status: None,
             credential_schema: None,
-            proof: ProfileV2CredentialProof {
+            proof: OanCredentialProof {
                 proof_type: "Ed25519Signature2020".to_owned(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
@@ -1588,10 +1588,10 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_hash_excludes_proof_for_signature_input_but_includes_it_for_final_hash() {
+    fn oan_hash_excludes_proof_for_signature_input_but_includes_it_for_final_hash() {
         let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let key_id = format!("{did}#key-1");
-        let document = ProfileV2DidDocument {
+        let document = OanDidDocument {
             context: DID_OAN_CONTEXTS
                 .iter()
                 .map(|value| (*value).to_owned())
@@ -1603,7 +1603,7 @@ mod tests {
             assertion_method: vec![],
             capability_invocation: vec![],
             service: vec![],
-            proof: ProfileV2DataIntegrityProof {
+            proof: OanDataIntegrityProof {
                 proof_type: "Ed25519Signature2020".to_owned(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
@@ -1612,52 +1612,52 @@ mod tests {
             },
             oan_metadata: None,
         };
-        let input = profile_v2_signature_input(&document).unwrap();
-        let hash = profile_v2_did_document_hash(&document).unwrap();
+        let input = oan_signature_input(&document).unwrap();
+        let hash = oan_did_document_hash(&document).unwrap();
         assert!(!input.is_empty());
         assert!(hash.starts_with("sha256:"));
     }
 
     #[test]
-    fn profile_v2_jwk_requires_32_byte_public_key() {
-        let jwk = ProfileV2Jwk {
+    fn oan_jwk_requires_32_byte_public_key() {
+        let jwk = OanJwk {
             kty: "OKP".to_owned(),
             crv: "Ed25519".to_owned(),
             x: URL_SAFE_NO_PAD.encode([1u8; 31]),
             d: None,
             alg: None,
         };
-        assert_eq!(jwk.validate_ed25519(false), Err(ProfileV2Error::InvalidJwk));
+        assert_eq!(jwk.validate_ed25519(false), Err(OanProfileError::InvalidJwk));
     }
 
     #[test]
-    fn profile_v2_identity_public_projection_excludes_private_key() {
-        let public = ProfileV2Jwk {
+    fn oan_identity_public_projection_excludes_private_key() {
+        let public = OanJwk {
             kty: "OKP".to_owned(),
             crv: "Ed25519".to_owned(),
             x: URL_SAFE_NO_PAD.encode([3u8; 32]),
             d: None,
             alg: Some("EdDSA".to_owned()),
         };
-        let private = ProfileV2Jwk {
+        let private = OanJwk {
             d: Some(URL_SAFE_NO_PAD.encode([4u8; 32])),
             ..public.clone()
         };
         let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let key_id = format!("{did}#key-1");
-        let identity = ProfileV2OanIdentity {
+        let identity = OanIdentity {
             id: "urn:oan:identity:test".to_owned(),
             created_at: "2026-09-29T00:00:00Z".to_owned(),
             did: did.to_owned(),
             verification_method_id: key_id.clone(),
-            did_document: ProfileV2DidDocument {
+            did_document: OanDidDocument {
                 context: DID_OAN_CONTEXTS
                     .iter()
                     .map(|value| (*value).to_owned())
                     .collect(),
                 id: did.to_owned(),
                 controller: Some(DidController::Did(did.to_owned())),
-                verification_method: vec![ProfileV2VerificationMethod {
+                verification_method: vec![OanVerificationMethod {
                     id: key_id.clone(),
                     method_type: "Ed25519VerificationKey2020".to_owned(),
                     controller: did.to_owned(),
@@ -1668,7 +1668,7 @@ mod tests {
                 assertion_method: vec![key_id.clone()],
                 capability_invocation: vec![],
                 service: vec![],
-                proof: ProfileV2DataIntegrityProof {
+                proof: OanDataIntegrityProof {
                     proof_type: "Ed25519Signature2020".to_owned(),
                     created: Utc::now(),
                     proof_purpose: "assertionMethod".to_owned(),
@@ -1686,17 +1686,17 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_did_document_accepts_fixed_context_and_key_1() {
+    fn oan_did_document_accepts_fixed_context_and_key_1() {
         let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let key_id = format!("{did}#key-1");
-        let document = ProfileV2DidDocument {
+        let document = OanDidDocument {
             context: DID_OAN_CONTEXTS
                 .iter()
                 .map(|value| (*value).to_owned())
                 .collect(),
             id: did.to_owned(),
             controller: Some(DidController::Did(did.to_owned())),
-            verification_method: vec![ProfileV2VerificationMethod {
+            verification_method: vec![OanVerificationMethod {
                 id: key_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
                 controller: did.to_owned(),
@@ -1710,7 +1710,7 @@ mod tests {
             assertion_method: vec![key_id.clone()],
             capability_invocation: vec![],
             service: vec![],
-            proof: ProfileV2DataIntegrityProof {
+            proof: OanDataIntegrityProof {
                 proof_type: "Ed25519Signature2020".to_owned(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
@@ -1723,17 +1723,17 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_did_document_rejects_old_context_and_non_multibase_signature() {
+    fn oan_did_document_rejects_old_context_and_non_multibase_signature() {
         let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let key_id = format!("{did}#key-1");
-        let mut document = ProfileV2DidDocument {
+        let mut document = OanDidDocument {
             context: DID_OAN_CONTEXTS
                 .iter()
                 .map(|value| (*value).to_owned())
                 .collect(),
             id: did.to_owned(),
             controller: Some(DidController::Did(did.to_owned())),
-            verification_method: vec![ProfileV2VerificationMethod {
+            verification_method: vec![OanVerificationMethod {
                 id: key_id.clone(),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
                 controller: did.to_owned(),
@@ -1747,7 +1747,7 @@ mod tests {
             assertion_method: vec![key_id.clone()],
             capability_invocation: vec![],
             service: vec![],
-            proof: ProfileV2DataIntegrityProof {
+            proof: OanDataIntegrityProof {
                 proof_type: "Ed25519Signature2020".to_owned(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
@@ -1757,10 +1757,10 @@ mod tests {
             oan_metadata: None,
         };
         document.context[1] = "https://w3id.org/oan/v1".to_owned();
-        assert_eq!(document.validate(), Err(ProfileV2Error::InvalidContext));
+        assert_eq!(document.validate(), Err(OanProfileError::InvalidContext));
         document.context[1] = DID_OAN_CONTEXTS[1].to_owned();
         document.proof.proof_value = "base64url-signature".to_owned();
-        assert_eq!(document.validate(), Err(ProfileV2Error::InvalidProof));
+        assert_eq!(document.validate(), Err(OanProfileError::InvalidProof));
     }
 
     fn sample_oan_resource_document(
@@ -1862,7 +1862,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_type_values_are_independent_of_did_code() {
+    fn oan_type_values_are_independent_of_did_code() {
         assert_eq!(ResourceType::Skill.as_str(), "skill");
         assert_eq!(ResourceType::RegistrarNode.as_str(), "registrar_node");
         assert_eq!(SubjectType::AgentInstance, SubjectType::AgentInstance);
@@ -1886,7 +1886,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_serialization_has_no_legacy_node_role() {
+    fn oan_serialization_has_no_legacy_node_role() {
         let metadata = OanMetadata {
             subject_type: SubjectType::Skill,
             resource_type: ResourceType::Skill,
@@ -2055,12 +2055,12 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_rejects_legacy_crypto_suite() {
+    fn oan_rejects_legacy_crypto_suite() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof.as_mut().unwrap().proof_value = "legacy-signature".to_owned();
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("profileV2")
+            DidDocumentError::InvalidProof("did:oan")
         );
     }
 
@@ -2080,7 +2080,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_requires_top_level_proof() {
+    fn oan_requires_top_level_proof() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof = None;
         assert_eq!(
@@ -2090,13 +2090,13 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_rejects_proof_relationship_mismatch() {
+    fn oan_rejects_proof_relationship_mismatch() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof.as_mut().unwrap().verification_method =
             Some(format!("{}#missing", document.id));
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("profileV2")
+            DidDocumentError::InvalidProof("did:oan")
         );
 
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
@@ -2110,17 +2110,17 @@ mod tests {
         document.assertion_method = vec![format!("{method_id}-other")];
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("profileV2")
+            DidDocumentError::InvalidProof("did:oan")
         );
     }
 
     #[test]
-    fn profile_v2_rejects_proof_algorithm_mismatch() {
+    fn oan_rejects_proof_algorithm_mismatch() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof.as_mut().unwrap().proof_value = "zinvalid".to_owned();
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
-            DidDocumentError::InvalidProof("profileV2")
+            DidDocumentError::InvalidProof("did:oan")
         );
     }
 

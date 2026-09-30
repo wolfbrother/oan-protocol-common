@@ -3,7 +3,7 @@
 // Initial author: JINLIANG XU
 // Email: jlxufly@gmail.com
 
-//! `did:oan` profile-v2 parsing, generation, and validation.
+//! `did:oan` current did:oan parsing, generation, and validation.
 
 use rand::{rngs::OsRng, RngCore};
 use regex::Regex;
@@ -37,7 +37,7 @@ pub enum DidOanError {
     InvalidRoutingCode,
     #[error("suffix-code must be exactly 32 Base58 characters")]
     InvalidSuffixCode,
-    #[error("invalid did:oan profile-v2 syntax")]
+    #[error("invalid did:oan current did:oan syntax")]
     InvalidSyntax,
 }
 
@@ -187,7 +187,7 @@ mod tests {
     const SUFFIX: &str = "7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz";
 
     #[test]
-    fn parses_profile_v2_did_without_type_inference() {
+    fn parses_oan_did_without_type_inference() {
         let did = DidOan::parse(format!("did:oan:K7mQ9:{SUFFIX}")).unwrap();
         assert_eq!(did.routing_code(), "K7mQ9");
         assert_eq!(did.suffix_code(), SUFFIX);
@@ -271,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn generates_and_derives_stable_profile_v2_identifiers() {
+    fn generates_and_derives_stable_oan_identifiers() {
         let generated = DidOan::generate("K7mQ9").unwrap();
         assert_eq!(generated.as_str().len(), DID_LEN);
         assert_eq!(DidOan::parse(generated.as_str()).unwrap(), generated);
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn cross_language_fixture_did_cases_match_parser_behavior() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../test-fixtures/did-oan-profile-v2-cross-language.json"
+            "../../../test-fixtures/did-oan-cross-language.json"
         ))
         .unwrap();
         let cases = fixture["didCases"].as_array().unwrap();

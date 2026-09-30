@@ -7,11 +7,11 @@
 
 use chrono::{DateTime, Utc};
 use oan_core::{
-    CryptoSuite, ProfileV2CredentialProof, ResourceType, SubjectType,
+    CryptoSuite, OanCredentialProof, ResourceType, SubjectType,
 };
 use oan_crypto::{
     hash_json_with_suite, public_key_jwk, signature_input, signing_key_from_private_key_jwk,
-    verify_profile_v2_payload, verifying_key_from_method, CryptoError,
+    verify_oan_payload, verifying_key_from_method, CryptoError,
     SigningKey, VerifyingKey,
 };
 use ed25519_dalek::Signer;
@@ -35,11 +35,11 @@ pub enum CredentialError {
     Serialization(#[from] serde_json::Error),
 }
 
-/// VC proofs use the strict DID/VC profile-v2 Data Integrity shape.
+/// VC proofs use the strict DID/VC current did:oan Data Integrity shape.
 ///
 /// Node-to-node request envelopes deliberately keep their separate
 /// `DataIntegrityProof` model in `oan-core`; it is not reused here.
-pub type CredentialProof = ProfileV2CredentialProof;
+pub type CredentialProof = OanCredentialProof;
 
 pub const VC_INFRASTRUCTURE_AUTHORIZATION: &str = "OANInfrastructureAuthorizationCredential";
 pub const VC_RESOURCE_REGISTRATION: &str = "OANResourceRegistrationCredential";
@@ -327,14 +327,14 @@ impl OanIdentity {
             verifying_key_from_method(method).map_err(|_| CredentialError::InvalidSubject)?;
         let mut unsigned = self.did_document.clone();
         unsigned.proof = None;
-        let proof = ProfileV2CredentialProof {
+        let proof = OanCredentialProof {
             proof_type: proof.proof_type.clone(),
             created: proof.created,
             proof_purpose: proof.proof_purpose.clone(),
             proof_value: proof.proof_value.clone(),
             verification_method: proof.verification_method.clone().unwrap(),
         };
-        verify_profile_v2_payload(&unsigned, &proof, &verifying_key)
+        verify_oan_payload(&unsigned, &proof, &verifying_key)
             .map_err(|_| CredentialError::InvalidSignature)?;
         Ok(())
     }
@@ -379,7 +379,7 @@ where
     T: Serialize,
 {
     let proof = proof.ok_or(CredentialError::MissingProof)?;
-    verify_profile_v2_payload(payload_without_proof, proof, verifying_key)
+    verify_oan_payload(payload_without_proof, proof, verifying_key)
         .map_err(|_| CredentialError::InvalidSignature)
 }
 
@@ -686,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn signed_credential_proof_uses_profile_v2_shape() {
+    fn signed_credential_proof_uses_oan_shape() {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
         let proof = proof_for(
             &json!({"issuer": "did:oan:root", "credentialSubject": {"id": "did:oan:res"}}),

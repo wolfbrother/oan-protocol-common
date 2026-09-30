@@ -12,7 +12,7 @@ use ed25519_dalek::{
 };
 use iref::{IriBuf, UriBuf};
 use oan_core::{
-    CryptoSuite, DataIntegrityProof, DidDocument, ProfileV2CredentialProof, VerificationMethod,
+    CryptoSuite, DataIntegrityProof, DidDocument, OanCredentialProof, VerificationMethod,
 };
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
@@ -59,7 +59,7 @@ pub enum CryptoError {
 ///
 /// This is the strict Profile v2 path. It deliberately does not use the
 /// legacy OAN canonical-JSON/Base64URL path.
-pub async fn sign_profile_v2_data_integrity(
+pub async fn sign_oan_data_integrity(
     document: serde_json::Value,
     did: &str,
     private_key_jwk: serde_json::Value,
@@ -140,7 +140,7 @@ pub async fn sign_profile_v2_data_integrity(
 }
 
 /// Verify a JSON-LD document with the standard Ed25519Signature2020 suite.
-pub async fn verify_profile_v2_data_integrity(
+pub async fn verify_oan_data_integrity(
     document: serde_json::Value,
     public_key_jwk: serde_json::Value,
 ) -> Result<(), CryptoError> {
@@ -719,9 +719,9 @@ pub fn verify_payload_with_proof<T: Serialize>(
     verify_bytes(verifying_key, &input, &proof.proof_value)
 }
 
-pub fn verify_profile_v2_payload<T: Serialize>(
+pub fn verify_oan_payload<T: Serialize>(
     payload: &T,
-    proof: &ProfileV2CredentialProof,
+    proof: &OanCredentialProof,
     verifying_key: &VerifyingKey,
 ) -> Result<(), CryptoError> {
     if proof.proof_type != "Ed25519Signature2020"
@@ -1077,9 +1077,9 @@ mod tests {
     }
 
     #[test]
-    fn profile_v2_cross_language_vector_matches_canonical_and_hash_outputs() {
+    fn oan_cross_language_vector_matches_canonical_and_hash_outputs() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../test-fixtures/did-oan-profile-v2-cross-language.json"
+            "../../../test-fixtures/did-oan-cross-language.json"
         ))
         .unwrap();
         assert_eq!(

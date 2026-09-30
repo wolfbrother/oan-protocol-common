@@ -29,7 +29,7 @@ pub const PATH_ROOT_INFRASTRUCTURE_AUTHORIZATION_VCS_ISSUE: &str =
 pub const PATH_CDN_RESOURCES: &str = "/cdn/resources";
 pub const PATH_CDN_RESOURCES_BATCH: &str = "/cdn/resources/batch";
 
-/// Checks the profile-v2 routing relationship for a resource submitted by a
+/// Checks the current did:oan routing relationship for a resource submitted by a
 /// registrar.  This is a syntactic admission check only; authorization and
 /// lifecycle state remain governed by the existing proof and governance paths.
 pub fn validate_resource_routing_code(
