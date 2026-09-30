@@ -486,6 +486,54 @@ pub fn verify_bytes_multibase(
     }
 }
 
+pub fn verify_did_document_proof(document: &DidDocument) -> Result<(), CryptoError> {
+    const DID_CONTEXT: &str = "https://www.w3.org/ns/did/v1";
+    const OAN_CONTEXT: &str = "https://openagenet.xyz/did-oan-specs/v1";
+    const ED25519_CONTEXT: &str = "https://w3id.org/security/suites/ed25519-2020/v1";
+    if document.context
+        != [DID_CONTEXT.to_owned(), OAN_CONTEXT.to_owned(), ED25519_CONTEXT.to_owned()]
+    {
+        return Err(CryptoError::InvalidProof);
+    }
+    let proof = document.proof.as_ref().ok_or(CryptoError::InvalidProof)?;
+    if proof.proof_type != "Ed25519Signature2020"
+        || proof.proof_purpose != "assertionMethod"
+        || !proof.creator.is_empty()
+        || proof.crypto_suite.is_some()
+        || proof.hash_algorithm.is_some()
+    {
+        return Err(CryptoError::InvalidProof);
+    }
+    let method_id = format!("{}#key-1", document.id);
+    if proof.verification_method.as_deref() != Some(method_id.as_str())
+        || !document.assertion_method.iter().any(|id| id == &method_id)
+    {
+        return Err(CryptoError::InvalidProof);
+    }
+    let method = document
+        .verification_method
+        .iter()
+        .find(|method| method.id == method_id && method.controller == document.id)
+        .ok_or(CryptoError::InvalidProof)?;
+    if method.method_type != "Ed25519VerificationKey2020" {
+        return Err(CryptoError::InvalidProof);
+    }
+    if method
+        .public_key_jwk
+        .as_ref()
+        .and_then(|jwk| jwk.get("alg"))
+        .and_then(serde_json::Value::as_str)
+        == Some("Ed25519")
+    {
+        return Err(CryptoError::InvalidProof);
+    }
+    let verifying_key = verifying_key_from_method(method)?;
+    let mut unsigned = document.clone();
+    unsigned.proof = None;
+    let input = did_document_signature_input(&unsigned, CryptoSuite::Ed25519Sha256)?;
+    verify_bytes_multibase(&verifying_key, &input, &proof.proof_value)
+}
+
 pub fn sign_legacy_ed25519_bytes(signing_key: &Ed25519SigningKey, payload: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(signing_key.sign(payload).to_bytes())
 }
@@ -788,6 +836,102 @@ mod tests {
             &signature,
         )
         .expect_err("different key must not verify");
+    }
+
+    #[test]
+    fn verifies_complete_did_document_proof_and_rejects_tampering() {
+        let keypair = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let method_id = format!("{did}#key-1");
+        let verifying_key = keypair.verifying_key.clone();
+        let mut document = DidDocument {
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
+            id: did.to_owned(),
+            controller: Some(oan_core::DidController::Did(did.to_owned())),
+            verification_method: vec![VerificationMethod {
+                id: method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: did.to_owned(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: Some("multibase".to_owned()),
+                public_key_multibase: Some(public_key_multibase(&verifying_key)),
+                public_key_jwk: Some(public_key_jwk(&verifying_key)),
+            }],
+            authentication: vec![method_id.clone()],
+            assertion_method: vec![method_id.clone()],
+            capability_invocation: vec![method_id.clone()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let input = did_document_signature_input(&document, CryptoSuite::Ed25519Sha256).unwrap();
+        document.proof = Some(DataIntegrityProof {
+            proof_type: "Ed25519Signature2020".to_owned(),
+            creator: String::new(),
+            created: chrono::Utc::now(),
+            proof_purpose: "assertionMethod".to_owned(),
+            proof_value: sign_bytes_multibase(&keypair.signing_key, &input).unwrap(),
+            crypto_suite: None,
+            hash_algorithm: None,
+            verification_method: Some(method_id),
+        });
+        verify_did_document_proof(&document).unwrap();
+        document.id.push('x');
+        assert!(verify_did_document_proof(&document).is_err());
+    }
+
+    #[test]
+    fn did_document_proof_rejects_legacy_context_and_jwk_algorithm() {
+        let keypair = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let method_id = format!("{did}#key-1");
+        let verifying_key = keypair.verifying_key.clone();
+        let mut document = DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: did.to_owned(),
+            controller: Some(oan_core::DidController::Did(did.to_owned())),
+            verification_method: vec![VerificationMethod {
+                id: method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: did.to_owned(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: Some("multibase".to_owned()),
+                public_key_multibase: Some(public_key_multibase(&verifying_key)),
+                public_key_jwk: Some(public_key_jwk(&verifying_key)),
+            }],
+            authentication: vec![method_id.clone()],
+            assertion_method: vec![method_id.clone()],
+            capability_invocation: vec![method_id.clone()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let input = did_document_signature_input(&document, CryptoSuite::Ed25519Sha256).unwrap();
+        document.proof = Some(DataIntegrityProof {
+            proof_type: "Ed25519Signature2020".to_owned(),
+            creator: String::new(),
+            created: chrono::Utc::now(),
+            proof_purpose: "assertionMethod".to_owned(),
+            proof_value: sign_bytes_multibase(&keypair.signing_key, &input).unwrap(),
+            crypto_suite: None,
+            hash_algorithm: None,
+            verification_method: Some(method_id),
+        });
+        assert!(verify_did_document_proof(&document).is_err());
+        document.context = vec![
+            "https://www.w3.org/ns/did/v1".to_owned(),
+            "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+            "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+        ];
+        document.verification_method[0]
+            .public_key_jwk
+            .as_mut()
+            .unwrap()["alg"] = serde_json::json!("Ed25519");
+        assert!(verify_did_document_proof(&document).is_err());
     }
 
     #[test]
