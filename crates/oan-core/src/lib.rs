@@ -855,7 +855,7 @@ pub struct DidDocument {
     #[serde(default)]
     pub service: Vec<ServiceEndpoint>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub proof: Option<ProfileV2DataIntegrityProof>,
+    pub proof: Option<DataIntegrityProof>,
     #[serde(rename = "oanMetadata", skip_serializing_if = "Option::is_none")]
     pub oan_metadata: Option<OanMetadata>,
 }
@@ -1372,11 +1372,15 @@ fn valid_type_combination(subject: &SubjectType, resource: &ResourceType) -> boo
 fn validate_proof(
     document: &DidDocument,
     _controller: &DidController,
-    proof: &ProfileV2DataIntegrityProof,
+    proof: &DataIntegrityProof,
 ) -> Result<(), DidDocumentError> {
-    let verification_method = proof.verification_method.as_str();
+    let verification_method = proof
+        .verification_method
+        .as_deref()
+        .ok_or(DidDocumentError::InvalidProof("verificationMethod"))?;
     let expected_method = format!("{}#key-1", document.id);
-    if proof.proof_type != "Ed25519Signature2020"
+    if !proof.creator.is_empty()
+        || proof.proof_type != "Ed25519Signature2020"
         || proof.proof_purpose != "assertionMethod"
         || verification_method != expected_method
         || !proof.proof_value.starts_with('z')
@@ -1782,12 +1786,15 @@ mod tests {
             assertion_method: vec![format!("{did}#key-1")],
             capability_invocation: vec![format!("{did}#key-1")],
             service: vec![],
-            proof: Some(ProfileV2DataIntegrityProof {
+            proof: Some(DataIntegrityProof {
                 proof_type: "Ed25519Signature2020".to_owned(),
+                creator: String::new(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
                 proof_value: format!("z{}", bs58::encode([8u8; 64]).into_string()),
-                verification_method: key_id,
+                crypto_suite: None,
+                hash_algorithm: None,
+                verification_method: Some(key_id),
             }),
             oan_metadata: Some(OanMetadata {
                 subject_type,
@@ -2086,7 +2093,7 @@ mod tests {
     fn profile_v2_rejects_proof_relationship_mismatch() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof.as_mut().unwrap().verification_method =
-            format!("{}#missing", document.id);
+            Some(format!("{}#missing", document.id));
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
             DidDocumentError::InvalidProof("profileV2")
@@ -2098,7 +2105,8 @@ mod tests {
             .as_ref()
             .unwrap()
             .verification_method
-            .clone();
+            .clone()
+            .unwrap();
         document.assertion_method = vec![format!("{method_id}-other")];
         assert_eq!(
             document.validate_oan_resource().unwrap_err(),
@@ -2184,7 +2192,7 @@ mod tests {
             document.authentication = vec![format!("{did}#key-1")];
             document.assertion_method = vec![format!("{did}#key-1")];
             if let Some(proof) = &mut document.proof {
-                proof.verification_method = format!("{did}#key-1");
+                proof.verification_method = Some(format!("{did}#key-1"));
             }
 
             let result = document.validate_oan_resource();

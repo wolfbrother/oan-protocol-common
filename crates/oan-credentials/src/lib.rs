@@ -316,7 +316,11 @@ impl OanIdentity {
             .proof
             .as_ref()
             .ok_or(CredentialError::InvalidSubject)?;
-        if proof.verification_method != self.verification_method_id {
+        if proof.verification_method.as_deref() != Some(self.verification_method_id.as_str())
+            || !proof.creator.is_empty()
+            || proof.crypto_suite.is_some()
+            || proof.hash_algorithm.is_some()
+        {
             return Err(CredentialError::InvalidSubject);
         }
         let verifying_key =
@@ -328,7 +332,7 @@ impl OanIdentity {
             created: proof.created,
             proof_purpose: proof.proof_purpose.clone(),
             proof_value: proof.proof_value.clone(),
-            verification_method: proof.verification_method.clone(),
+            verification_method: proof.verification_method.clone().unwrap(),
         };
         verify_profile_v2_payload(&unsigned, &proof, &verifying_key)
             .map_err(|_| CredentialError::InvalidSignature)?;
@@ -540,7 +544,7 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use oan_crypto::private_key_jwk;
-    use oan_crypto::{build_data_integrity_proof, generate_keypair, public_key_jwk};
+    use oan_crypto::{generate_keypair, public_key_jwk};
     use serde_json::json;
 
     fn proof_for<T: Serialize>(payload: &T, key_id: &str, key: &SigningKey) -> CredentialProof {
@@ -549,6 +553,24 @@ mod tests {
 
     fn private_jwk(key: &SigningKey) -> Value {
         private_key_jwk(key)
+    }
+
+    fn did_proof_for<T: Serialize>(
+        payload: &T,
+        key_id: String,
+        key: &SigningKey,
+    ) -> oan_core::DataIntegrityProof {
+        let proof = sign_credential(payload, key_id.clone(), key_id, key).unwrap();
+        oan_core::DataIntegrityProof {
+            proof_type: proof.proof_type,
+            creator: String::new(),
+            created: proof.created,
+            proof_purpose: proof.proof_purpose,
+            proof_value: proof.proof_value,
+            crypto_suite: None,
+            hash_algorithm: None,
+            verification_method: Some(proof.verification_method),
+        }
     }
 
     #[test]
@@ -763,7 +785,7 @@ mod tests {
         };
         let unsigned = document.clone();
         document.proof = Some(
-            build_data_integrity_proof(&unsigned, did.clone(), other, &key.signing_key).unwrap(),
+            did_proof_for(&unsigned, other, &key.signing_key),
         );
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
@@ -808,13 +830,11 @@ mod tests {
         };
         let unsigned = document.clone();
         document.proof = Some(
-            build_data_integrity_proof(
+            did_proof_for(
                 &unsigned,
-                method_id.clone(),
                 method_id.clone(),
                 &key.signing_key,
             )
-            .unwrap(),
         );
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
@@ -857,13 +877,11 @@ mod tests {
         };
         let unsigned = document.clone();
         document.proof = Some(
-            build_data_integrity_proof(
+            did_proof_for(
                 &unsigned,
-                method_id.clone(),
                 method_id.clone(),
                 &key.signing_key,
             )
-            .unwrap(),
         );
         let identity = OanIdentity {
             id: "identity-1".to_owned(),

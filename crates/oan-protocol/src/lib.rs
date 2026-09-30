@@ -603,14 +603,14 @@ mod tests {
             assertion_method: vec![key_id.clone()],
             capability_invocation: vec![key_id.clone()],
             service: vec![],
-            proof: Some(DataIntegrityProof {
+            proof: Some(oan_core::DataIntegrityProof {
                 proof_type: "Ed25519Signature2020".to_owned(),
-                creator: key_id.clone(),
+                creator: String::new(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
-                proof_value: "fixture".to_owned(),
-                crypto_suite: Some(oan_core::CryptoSuite::Ed25519Sha256),
-                hash_algorithm: Some("sha256".to_owned()),
+                proof_value: "z4HnYnN6MCvEhMhcjUKpVYCaqXyP714jVJXJVTJprdb9wdTGsY5dkRWPf2wXNJuRWA1XiMZFPizD9PGEM3ZV4vNYF".to_owned(),
+                crypto_suite: None,
+                hash_algorithm: None,
                 verification_method: Some(key_id),
             }),
             oan_metadata: Some(oan_core::OanMetadata {

@@ -849,12 +849,12 @@ mod tests {
         let mut with_proof = document.clone();
         with_proof.proof = Some(DataIntegrityProof {
             proof_type: "Ed25519Signature2020".to_owned(),
-            creator: "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo#key-1".to_owned(),
+            creator: String::new(),
             created: chrono::Utc::now(),
             proof_purpose: "assertionMethod".to_owned(),
-            proof_value: "fixture-proof".to_owned(),
-            crypto_suite: Some(CryptoSuite::Ed25519Sha256),
-            hash_algorithm: Some("sha256".to_owned()),
+            proof_value: "z4HnYnN6MCvEhMhcjUKpVYCaqXyP714jVJXJVTJprdb9wdTGsY5dkRWPf2wXNJuRWA1XiMZFPizD9PGEM3ZV4vNYF".to_owned(),
+            crypto_suite: None,
+            hash_algorithm: None,
             verification_method: Some(
                 "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo#key-1".to_owned(),
             ),
