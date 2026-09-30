@@ -1770,14 +1770,14 @@ mod tests {
         let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let key_id = format!("{did}#key-1");
         DidDocument {
-            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            context: DID_OAN_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
             id: did.to_owned(),
             controller: Some(DidController::Did(did.to_owned())),
             verification_method: vec![VerificationMethod {
                 id: format!("{did}#key-1"),
                 method_type: "Ed25519VerificationKey2020".to_owned(),
                 controller: did.to_owned(),
-                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                crypto_suite: None,
                 public_key_format: None,
                 public_key_multibase: Some("zExample".to_owned()),
                 public_key_jwk: None,
