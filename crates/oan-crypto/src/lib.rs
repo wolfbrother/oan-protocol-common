@@ -11,7 +11,9 @@ use ed25519_dalek::{
     VerifyingKey as Ed25519VerifyingKey,
 };
 use iref::{IriBuf, UriBuf};
-use oan_core::{CryptoSuite, DataIntegrityProof, DidDocument, VerificationMethod};
+use oan_core::{
+    CryptoSuite, DataIntegrityProof, DidDocument, ProfileV2CredentialProof, VerificationMethod,
+};
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
 use sha2::{Digest as ShaDigest, Sha256};
@@ -630,6 +632,35 @@ pub fn verify_payload_with_proof<T: Serialize>(
     }
     let input = signature_input(suite, payload)?;
     verify_bytes(verifying_key, &input, &proof.proof_value)
+}
+
+pub fn verify_profile_v2_payload<T: Serialize>(
+    payload: &T,
+    proof: &ProfileV2CredentialProof,
+    verifying_key: &VerifyingKey,
+) -> Result<(), CryptoError> {
+    if proof.proof_type != "Ed25519Signature2020"
+        || proof.proof_purpose != "assertionMethod"
+        || !proof.proof_value.starts_with('z')
+    {
+        return Err(CryptoError::InvalidProof);
+    }
+    let signature = bs58::decode(&proof.proof_value[1..])
+        .into_vec()
+        .map_err(|_| CryptoError::InvalidSignature)?;
+    let signature: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| CryptoError::InvalidSignature)?;
+    let input = signature_input(CryptoSuite::Ed25519Sha256, payload)?;
+    match verifying_key {
+        VerifyingKey::Ed25519 { key, .. } => key
+            .verify(
+                &input,
+                &Ed25519Signature::from_bytes(&signature),
+            )
+            .map_err(|_| CryptoError::VerificationFailed),
+        VerifyingKey::Sm2 { .. } => Err(CryptoError::UnsupportedCryptoSuite),
+    }
 }
 
 pub fn build_data_integrity_proof<T: Serialize>(

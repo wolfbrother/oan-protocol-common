@@ -10,7 +10,9 @@ keywords = ["oan", "credentials", "vc"]
 categories = ["authentication", "data-structures"]
 
 [dependencies]
+bs58.workspace = true
 chrono.workspace = true
+ed25519-dalek.workspace = true
 oan-core = { path = "../oan-core", version = "1.0.0" }
 oan-crypto = { path = "../oan-crypto", version = "1.0.0" }
 serde.workspace = true
