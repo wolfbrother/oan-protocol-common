@@ -415,6 +415,18 @@ where
     T: Serialize,
 {
     let value = serde_json::to_value(credential)?;
+    let issuer = value
+        .get("issuer")
+        .and_then(Value::as_str)
+        .ok_or(CredentialError::InvalidSubject)?;
+    let verification_method = value
+        .get("proof")
+        .and_then(|proof| proof.get("verificationMethod"))
+        .and_then(Value::as_str)
+        .ok_or(CredentialError::InvalidSignature)?;
+    if verification_method != format!("{issuer}#key-1") {
+        return Err(CredentialError::InvalidSignature);
+    }
     verify_oan_data_integrity(value, issuer_public_key_jwk).await?;
     Ok(())
 }
@@ -740,6 +752,51 @@ mod tests {
             .unwrap();
 
         credential.credential_subject.authorized_domains = vec!["finance".to_owned()];
+        assert!(
+            verify_credential_data_integrity(&credential, public_key_jwk(&key.verifying_key))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn credential_data_integrity_verification_rejects_non_issuer_method() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let subject = InfrastructureAuthorizationCredentialSubject {
+            id: "did:oan:2Xr85:Edi352G96M7kgMB84enoEG2mj8AsDm3u".to_owned(),
+            role: "registrar".to_owned(),
+            subject_type: "infrastructure_node".to_owned(),
+            resource_type: "registrar_node".to_owned(),
+            endpoint: None,
+            authorized_domains: vec!["technology".to_owned()],
+            did_document_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        };
+        let mut credential = OanVerifiableCredential {
+            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            id: Some("urn:oan:root-authorization:registrar:wrong-issuer".to_owned()),
+            credential_type: vec![
+                "VerifiableCredential".to_owned(),
+                VC_INFRASTRUCTURE_AUTHORIZATION.to_owned(),
+            ],
+            issuer: "did:oan:root".to_owned(),
+            issuance_date: Utc::now(),
+            expiration_date: None,
+            credential_subject: subject,
+            credential_status: None,
+            credential_schema: None,
+            proof: proof_for(&json!({}), "did:oan:root#key-1", &key.signing_key),
+        };
+        let mut unsigned = serde_json::to_value(&credential).unwrap();
+        unsigned.as_object_mut().unwrap().remove("proof");
+        credential.proof = sign_credential_data_integrity(
+            &unsigned,
+            "did:oan:other#key-1".to_owned(),
+            &key.signing_key,
+        )
+        .await
+        .unwrap();
+
         assert!(
             verify_credential_data_integrity(&credential, public_key_jwk(&key.verifying_key))
                 .await
