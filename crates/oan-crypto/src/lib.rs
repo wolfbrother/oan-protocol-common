@@ -31,8 +31,12 @@ use ssi_verification_methods::{AnyMethod, Ed25519VerificationKey2020, SingleSecr
 use thiserror::Error;
 
 const DEFAULT_SM2_DISTINGUISHED_ID: &str = "1234567812345678";
+const DID_CORE_CONTEXT_URL: &str = "https://www.w3.org/ns/did/v1";
+const DID_CORE_CONTEXT_DOCUMENT: &str = r#"{"@context":{"id":"@id","type":"@type","controller":"https://w3id.org/security#controller","verificationMethod":"https://w3id.org/security#verificationMethod","authentication":"https://w3id.org/security#authenticationMethod","assertionMethod":"https://w3id.org/security#assertionMethod","capabilityInvocation":"https://w3id.org/security#capabilityInvocationMethod","service":"https://www.w3.org/ns/did#service","serviceEndpoint":"https://www.w3.org/ns/did#serviceEndpoint"}}"#;
 const OAN_CONTEXT_URL: &str = "https://openagenet.xyz/did-oan-specs/v1";
 const OAN_CONTEXT_DOCUMENT: &str = r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata"}}"#;
+const ED25519_CONTEXT_URL: &str = "https://w3id.org/security/suites/ed25519-2020/v1";
+const VC_CONTEXT_URL: &str = "https://www.w3.org/2018/credentials/v1";
 
 #[derive(Debug, Error)]
 pub enum CryptoError {
@@ -219,13 +223,72 @@ pub async fn verify_oan_data_integrity(
     Ok(())
 }
 
+/// Verify a did:oan DID Document using the strict Ed25519Signature2020
+/// Data Integrity path.  The legacy synchronous helper remains available for
+/// non-upgraded fixtures; network-facing registration paths must use this one.
+pub async fn verify_did_document_proof_standard(
+    document: &DidDocument,
+) -> Result<(), CryptoError> {
+    verify_did_document_proof_standard_value(serde_json::to_value(document)?).await
+}
+
+/// Verify a DID Document without first converting it through the Rust
+/// strong-type model. HTTP handlers use this entry point so JSON-LD fields
+/// omitted by `serde` remain part of the signed document.
+pub async fn verify_did_document_proof_standard_value(
+    document: serde_json::Value,
+) -> Result<(), CryptoError> {
+    let id = document
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(CryptoError::InvalidProof)?;
+    let method_id = format!("{id}#key-1");
+    let public_key = document
+        .get("verificationMethod")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|methods| {
+            methods.iter().find(|method| {
+                method.get("id").and_then(serde_json::Value::as_str) == Some(method_id.as_str())
+            })
+        })
+        .and_then(|method| method.get("publicKeyJwk"))
+        .cloned()
+        .ok_or(CryptoError::MissingKeyMaterial)?;
+    verify_oan_data_integrity(document, public_key).await
+}
+
+pub fn verify_did_document_proof_standard_blocking(
+    document: &DidDocument,
+) -> Result<(), CryptoError> {
+    futures::executor::block_on(verify_did_document_proof_standard(document))
+}
+
+pub fn verify_did_document_proof_standard_value_blocking(
+    document: serde_json::Value,
+) -> Result<(), CryptoError> {
+    futures::executor::block_on(verify_did_document_proof_standard_value(document))
+}
+
 fn oan_data_integrity_context_loader() -> Result<ssi_json_ld::ContextLoader, CryptoError> {
     Ok(ssi_json_ld::ContextLoader::empty()
-        .with_static_loader()
-        .with_context_map_from(std::collections::HashMap::from([(
-            OAN_CONTEXT_URL.to_owned(),
-            OAN_CONTEXT_DOCUMENT.to_owned(),
-        )]))
+        .with_context_map_from(std::collections::HashMap::from([
+            (
+                DID_CORE_CONTEXT_URL.to_owned(),
+                DID_CORE_CONTEXT_DOCUMENT.to_owned(),
+            ),
+            (
+                OAN_CONTEXT_URL.to_owned(),
+                OAN_CONTEXT_DOCUMENT.to_owned(),
+            ),
+            (
+                ED25519_CONTEXT_URL.to_owned(),
+                ssi_contexts::W3ID_ED2020_V1.to_owned(),
+            ),
+            (
+                VC_CONTEXT_URL.to_owned(),
+                ssi_contexts::CREDENTIALS_V1.to_owned(),
+            ),
+        ]))
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?)
 }
 
@@ -532,6 +595,7 @@ pub fn verify_did_document_proof(document: &DidDocument) -> Result<(), CryptoErr
         return Err(CryptoError::InvalidProof);
     }
     let proof = document.proof.as_ref().ok_or(CryptoError::InvalidProof)?;
+    let method_id = format!("{}#key-1", document.id);
     if proof.proof_type != "Ed25519Signature2020"
         || proof.proof_purpose != "assertionMethod"
         || !proof.creator.is_empty()
@@ -540,7 +604,6 @@ pub fn verify_did_document_proof(document: &DidDocument) -> Result<(), CryptoErr
     {
         return Err(CryptoError::InvalidProof);
     }
-    let method_id = format!("{}#key-1", document.id);
     if proof.verification_method.as_deref() != Some(method_id.as_str())
         || !document.assertion_method.iter().any(|id| id == &method_id)
     {
@@ -563,11 +626,7 @@ pub fn verify_did_document_proof(document: &DidDocument) -> Result<(), CryptoErr
     {
         return Err(CryptoError::InvalidProof);
     }
-    let verifying_key = verifying_key_from_method(method)?;
-    let mut unsigned = document.clone();
-    unsigned.proof = None;
-    let input = did_document_signature_input(&unsigned, CryptoSuite::Ed25519Sha256)?;
-    verify_bytes_multibase(&verifying_key, &input, &proof.proof_value)
+    verify_did_document_proof_standard_blocking(document)
 }
 
 pub fn sign_legacy_ed25519_bytes(signing_key: &Ed25519SigningKey, payload: &[u8]) -> String {
@@ -753,7 +812,7 @@ pub fn verify_payload_with_proof<T: Serialize>(
         return Err(CryptoError::VerificationFailed);
     }
     let input = signature_input(suite, payload)?;
-    verify_bytes(verifying_key, &input, &proof.proof_value)
+    verify_bytes_multibase(verifying_key, &input, &proof.proof_value)
 }
 
 pub fn verify_oan_payload<T: Serialize>(
@@ -795,7 +854,7 @@ pub fn build_data_integrity_proof<T: Serialize>(
         creator,
         created: chrono::Utc::now(),
         proof_purpose: "assertionMethod".to_owned(),
-        proof_value: sign_bytes(signing_key, &input)?,
+        proof_value: sign_bytes_multibase(signing_key, &input)?,
         crypto_suite: Some(suite.clone()),
         hash_algorithm: Some(suite.canonical_hash_algorithm().to_owned()),
         verification_method: Some(verification_method),
@@ -902,17 +961,16 @@ mod tests {
             proof: None,
             oan_metadata: None,
         };
-        let input = did_document_signature_input(&document, CryptoSuite::Ed25519Sha256).unwrap();
-        document.proof = Some(DataIntegrityProof {
-            proof_type: "Ed25519Signature2020".to_owned(),
-            creator: String::new(),
-            created: chrono::Utc::now(),
-            proof_purpose: "assertionMethod".to_owned(),
-            proof_value: sign_bytes_multibase(&keypair.signing_key, &input).unwrap(),
-            crypto_suite: None,
-            hash_algorithm: None,
-            verification_method: Some(method_id),
-        });
+        let private_key_jwk = private_key_jwk(&keypair.signing_key);
+        document = serde_json::from_value(
+            futures::executor::block_on(sign_oan_data_integrity(
+                serde_json::to_value(&document).unwrap(),
+                did,
+                private_key_jwk,
+            ))
+            .unwrap(),
+        )
+        .unwrap();
         verify_did_document_proof(&document).unwrap();
         document.id.push('x');
         assert!(verify_did_document_proof(&document).is_err());
@@ -1027,22 +1085,22 @@ mod tests {
     }
 
     #[test]
-    fn proof_verification_accepts_legacy_shape_without_crypto_suite() {
-        let keypair = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
+    fn proof_verification_rejects_legacy_base64_signature_shape() {
+        let keypair = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
         let payload = json!({"a": 1});
-        let input = signature_input(CryptoSuite::Ed25519Sha256Legacy, &payload).unwrap();
+        let input = signature_input(CryptoSuite::Ed25519Sha256, &payload).unwrap();
         let proof = DataIntegrityProof {
             proof_type: "Ed25519Signature2020".to_owned(),
             creator: "did:oan:AGDM:test#key-1".to_owned(),
             created: chrono::Utc::now(),
             proof_purpose: "assertionMethod".to_owned(),
             proof_value: sign_bytes(&keypair.signing_key, &input).unwrap(),
-            crypto_suite: None,
-            hash_algorithm: None,
-            verification_method: None,
+            crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+            hash_algorithm: Some("sha256".to_owned()),
+            verification_method: Some("did:oan:AGDM:test#key-1".to_owned()),
         };
 
-        verify_payload_with_proof(&payload, &proof, &keypair.verifying_key).unwrap();
+        assert!(verify_payload_with_proof(&payload, &proof, &keypair.verifying_key).is_err());
     }
 
     #[test]

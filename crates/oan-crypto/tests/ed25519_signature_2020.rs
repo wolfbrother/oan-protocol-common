@@ -222,6 +222,67 @@ async fn oan_adapter_uses_local_oan_context_without_remote_resolution() {
 }
 
 #[tokio::test]
+async fn oan_adapter_verifies_full_did_document_context_set() {
+    let signing_key = SigningKey::from_bytes(&[11u8; 32]);
+    let private_key = json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            signing_key.verifying_key().as_bytes()
+        ),
+        "d": base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            signing_key.to_bytes()
+        )
+    });
+    let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+    let document = json!({
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://openagenet.xyz/did-oan-specs/v1",
+            "https://w3id.org/security/suites/ed25519-2020/v1"
+        ],
+        "id": did,
+        "controller": did,
+        "verificationMethod": [{
+            "id": format!("{did}#key-1"),
+            "type": "Ed25519VerificationKey2020",
+            "controller": did,
+            "publicKeyJwk": private_key
+                .as_object()
+                .unwrap()
+                .iter()
+                .filter(|(key, _)| key.as_str() != "d")
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<serde_json::Map<_, _>>()
+        }],
+        "authentication": [format!("{did}#key-1")],
+        "assertionMethod": [format!("{did}#key-1")],
+        "service": [],
+        "oanMetadata": {
+            "subjectType": "controller",
+            "resourceType": "controller",
+            "controllerDid": did,
+            "authorizedDomains": ["*"]
+        }
+    });
+    let signed = sign_oan_data_integrity(document, did, private_key.clone())
+        .await
+        .unwrap();
+    verify_oan_data_integrity(
+        signed,
+        json!({
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": private_key["x"]
+        }),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn oan_adapter_rejects_wrong_method_and_key_algorithm() {
     let signing_key = SigningKey::from_bytes(&[7u8; 32]);
     let private_key = json!({

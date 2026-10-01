@@ -295,13 +295,22 @@ pub fn verify_signed_request_envelope<T: Serialize>(
         expected_method.as_deref(),
     )?;
     let verifying_key = verifying_key_from_method(method)
-        .map_err(|_| SecurityError::code("trusted_upstream_signature_invalid"))?;
+        .map_err(|_| SecurityError::code("trusted_upstream_key_invalid"))?;
     verify_payload_with_proof(&envelope_payload(envelope), &envelope.proof, &verifying_key)
-        .map_err(|_| SecurityError::code("trusted_upstream_signature_invalid"))?;
+        .map_err(|err| {
+            eprintln!(
+                "trusted upstream envelope signature verification failed: method={} proofType={} proofValue={} cryptoSuite={:?} error={err:?}",
+                method.id,
+                envelope.proof.proof_type,
+                envelope.proof.proof_value,
+                envelope.proof.crypto_suite
+            );
+            SecurityError::code("trusted_upstream_signature_invalid")
+        })?;
     let suite = crypto_suite_from_verification_method(method)
-        .map_err(|_| SecurityError::code("trusted_upstream_signature_invalid"))?;
+        .map_err(|_| SecurityError::code("trusted_upstream_suite_invalid"))?;
     let actual_body_hash = hash_json_with_suite(suite, payload)
-        .map_err(|_| SecurityError::code("trusted_upstream_signature_invalid"))?;
+        .map_err(|_| SecurityError::code("trusted_upstream_body_hash_invalid"))?;
     if actual_body_hash != envelope.body_hash {
         return Err(SecurityError::code("trusted_upstream_body_hash_mismatch"));
     }

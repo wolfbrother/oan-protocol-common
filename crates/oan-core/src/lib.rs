@@ -480,7 +480,7 @@ impl CryptoSuite {
 
     pub fn from_verification_method_type(value: &str) -> Option<Self> {
         match value {
-            "Ed25519VerificationKey2020" => Some(Self::Ed25519Sha256Legacy),
+            "Ed25519VerificationKey2020" => Some(Self::Ed25519Sha256),
             "SM2VerificationKey2020" => Some(Self::Sm2Sm3),
             _ => None,
         }
@@ -488,7 +488,7 @@ impl CryptoSuite {
 
     pub fn from_proof_type(value: &str) -> Option<Self> {
         match value {
-            "Ed25519Signature2020" => Some(Self::Ed25519Sha256Legacy),
+            "Ed25519Signature2020" => Some(Self::Ed25519Sha256),
             "SM2Signature2020" => Some(Self::Sm2Sm3),
             _ => None,
         }
@@ -2484,7 +2484,7 @@ mod tests {
     }
 
     #[test]
-    fn verification_method_infers_legacy_suite_for_historical_shape() {
+    fn verification_method_infers_current_suite_for_standard_shape() {
         let method = VerificationMethod {
             id: "did:oan:AGDM:test#key-1".to_owned(),
             method_type: "Ed25519VerificationKey2020".to_owned(),
@@ -2495,10 +2495,7 @@ mod tests {
             public_key_jwk: None,
         };
 
-        assert_eq!(
-            method.crypto_suite(),
-            Some(CryptoSuite::Ed25519Sha256Legacy)
-        );
+        assert_eq!(method.crypto_suite(), Some(CryptoSuite::Ed25519Sha256));
     }
 
     #[test]
@@ -2518,7 +2515,7 @@ mod tests {
     }
 
     #[test]
-    fn proof_infers_legacy_suite_for_historical_shape() {
+    fn proof_infers_current_suite_for_standard_shape() {
         let proof = DataIntegrityProof {
             proof_type: "Ed25519Signature2020".to_owned(),
             creator: "did:oan:AGDM:test#key-1".to_owned(),
@@ -2530,6 +2527,6 @@ mod tests {
             verification_method: None,
         };
 
-        assert_eq!(proof.crypto_suite(), Some(CryptoSuite::Ed25519Sha256Legacy));
+        assert_eq!(proof.crypto_suite(), Some(CryptoSuite::Ed25519Sha256));
     }
 }
