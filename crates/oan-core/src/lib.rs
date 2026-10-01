@@ -300,9 +300,7 @@ pub fn oan_canonical_json(value: &serde_json::Value) -> String {
     }
 }
 
-pub fn oan_signature_input(
-    document: &OanDidDocument,
-) -> Result<Vec<u8>, OanProfileError> {
+pub fn oan_signature_input(document: &OanDidDocument) -> Result<Vec<u8>, OanProfileError> {
     let mut value = serde_json::to_value(document).map_err(|_| OanProfileError::InvalidProof)?;
     value
         .as_object_mut()
@@ -311,9 +309,7 @@ pub fn oan_signature_input(
     Ok(oan_canonical_json(&value).into_bytes())
 }
 
-pub fn oan_did_document_hash(
-    document: &OanDidDocument,
-) -> Result<String, OanProfileError> {
+pub fn oan_did_document_hash(document: &OanDidDocument) -> Result<String, OanProfileError> {
     let value = serde_json::to_value(document).map_err(|_| OanProfileError::InvalidProof)?;
     let canonical = oan_canonical_json(&value);
     Ok(format!(
@@ -824,11 +820,23 @@ pub struct OanMetadata {
     pub capability_tags: Vec<String>,
     #[serde(rename = "authorizedDomains", default)]
     pub authorized_domains: Vec<String>,
-    #[serde(rename = "protocolBindings", default)]
+    #[serde(
+        rename = "protocolBindings",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub protocol_bindings: Vec<ProtocolBinding>,
-    #[serde(rename = "implementationLinks", default)]
+    #[serde(
+        rename = "implementationLinks",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub implementation_links: Vec<ImplementationLink>,
-    #[serde(rename = "credentialRequirements", default)]
+    #[serde(
+        rename = "credentialRequirements",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub credential_requirements: Vec<CredentialRequirement>,
     #[serde(rename = "packageInfo", skip_serializing_if = "Option::is_none")]
     pub package_info: Option<PackageInfo>,
@@ -1503,10 +1511,9 @@ mod tests {
 
     #[test]
     fn oan_fixture_contract_is_stable() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../test-fixtures/did-oan-contract.json"
-        ))
-        .unwrap();
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../test-fixtures/did-oan-contract.json"))
+                .unwrap();
         assert_eq!(fixture["contexts"], serde_json::json!(DID_OAN_CONTEXTS));
         assert_eq!(
             fixture["proof"]["verificationMethod"],
@@ -1540,7 +1547,10 @@ mod tests {
             d: None,
             alg: Some("Ed25519".to_owned()),
         };
-        assert_eq!(jwk.validate_ed25519(false), Err(OanProfileError::InvalidJwk));
+        assert_eq!(
+            jwk.validate_ed25519(false),
+            Err(OanProfileError::InvalidJwk)
+        );
     }
 
     #[test]
@@ -1636,7 +1646,10 @@ mod tests {
             d: None,
             alg: None,
         };
-        assert_eq!(jwk.validate_ed25519(false), Err(OanProfileError::InvalidJwk));
+        assert_eq!(
+            jwk.validate_ed25519(false),
+            Err(OanProfileError::InvalidJwk)
+        );
     }
 
     #[test]
@@ -1779,7 +1792,10 @@ mod tests {
         let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
         let key_id = format!("{did}#key-1");
         DidDocument {
-            context: DID_OAN_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: DID_OAN_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: did.to_owned(),
             controller: Some(DidController::Did(did.to_owned())),
             verification_method: vec![VerificationMethod {

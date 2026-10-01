@@ -220,13 +220,13 @@ pub async fn verify_oan_data_integrity(
 }
 
 fn oan_data_integrity_context_loader() -> Result<ssi_json_ld::ContextLoader, CryptoError> {
-    ssi_json_ld::ContextLoader::empty()
+    Ok(ssi_json_ld::ContextLoader::empty()
         .with_static_loader()
         .with_context_map_from(std::collections::HashMap::from([(
             OAN_CONTEXT_URL.to_owned(),
             OAN_CONTEXT_DOCUMENT.to_owned(),
         )]))
-        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?)
 }
 
 #[derive(Clone, Debug)]
@@ -419,7 +419,14 @@ pub fn verifying_key_from_public_key_multibase(
     let bytes = bs58::decode(encoded)
         .into_vec()
         .map_err(|_| CryptoError::InvalidPublicKeyEncoding)?;
-    verifying_key_from_bytes(suite, &bytes)
+    let key_bytes = match (suite.clone(), bytes.as_slice()) {
+        (
+            CryptoSuite::Ed25519Sha256 | CryptoSuite::Ed25519Sha256Legacy,
+            [0xed, 0x01, rest @ ..],
+        ) if rest.len() == 32 => rest,
+        _ => bytes.as_slice(),
+    };
+    verifying_key_from_bytes(suite, key_bytes)
 }
 
 pub fn verifying_key_from_public_key_jwk(

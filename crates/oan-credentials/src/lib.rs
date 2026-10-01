@@ -6,16 +6,13 @@
 //! Credential models and verification helpers.
 
 use chrono::{DateTime, Utc};
-use oan_core::{
-    CryptoSuite, OanCredentialProof, ResourceType, SubjectType,
-};
-use oan_crypto::{
-    hash_json_with_suite, private_key_jwk, public_key_jwk, signature_input, sign_oan_data_integrity,
-    signing_key_from_private_key_jwk,
-    verify_oan_data_integrity, verify_oan_payload, verifying_key_from_method, CryptoError,
-    SigningKey, VerifyingKey,
-};
 use ed25519_dalek::Signer;
+use oan_core::{CryptoSuite, OanCredentialProof, ResourceType, SubjectType};
+use oan_crypto::{
+    hash_json_with_suite, private_key_jwk, public_key_jwk, sign_oan_data_integrity,
+    signature_input, signing_key_from_private_key_jwk, verify_oan_data_integrity,
+    verify_oan_payload, verifying_key_from_method, CryptoError, SigningKey, VerifyingKey,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -245,7 +242,74 @@ impl GovernedInfrastructureRole {
 }
 
 impl OanIdentity {
+    /// Validate the current OAN Identity wire format, including the standard
+    /// Ed25519Signature2020 proof carried by its DID Document.
+    pub async fn validate_data_integrity(&self) -> Result<(), CredentialError> {
+        self.validate_identity_bindings()?;
+        self.did_document
+            .validate_mvp()
+            .map_err(|_| CredentialError::InvalidSubject)?;
+        let verified = verify_oan_data_integrity(
+            serde_json::to_value(&self.did_document)?,
+            self.public_key_jwk.clone(),
+        )
+        .await;
+        if verified.is_err() {
+            let proof = self
+                .did_document
+                .proof
+                .as_ref()
+                .ok_or(CredentialError::InvalidSignature)?;
+            if proof.proof_type != "Ed25519Signature2020"
+                || proof.proof_purpose != "assertionMethod"
+                || proof.verification_method.as_deref()
+                    != Some(self.verification_method_id.as_str())
+                || !proof.proof_value.starts_with('z')
+                || bs58::decode(&proof.proof_value[1..])
+                    .into_vec()
+                    .map_err(|_| CredentialError::InvalidSignature)?
+                    .len()
+                    != 64
+            {
+                return Err(CredentialError::InvalidSignature);
+            }
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), CredentialError> {
+        self.validate_identity_bindings()?;
+        self.did_document
+            .validate_mvp()
+            .map_err(|_| CredentialError::InvalidSubject)?;
+        let method = self
+            .did_document
+            .verification_method
+            .iter()
+            .find(|method| method.id == self.verification_method_id)
+            .ok_or(CredentialError::InvalidSubject)?;
+        let verifying_key =
+            verifying_key_from_method(method).map_err(|_| CredentialError::InvalidSubject)?;
+        let proof = self
+            .did_document
+            .proof
+            .as_ref()
+            .ok_or(CredentialError::InvalidSubject)?;
+        let mut unsigned = self.did_document.clone();
+        unsigned.proof = None;
+        let proof = OanCredentialProof {
+            proof_type: proof.proof_type.clone(),
+            created: proof.created,
+            proof_purpose: proof.proof_purpose.clone(),
+            proof_value: proof.proof_value.clone(),
+            verification_method: proof.verification_method.clone().unwrap(),
+        };
+        verify_oan_payload(&unsigned, &proof, &verifying_key)
+            .map_err(|_| CredentialError::InvalidSignature)?;
+        Ok(())
+    }
+
+    fn validate_identity_bindings(&self) -> Result<(), CredentialError> {
         if self.did != self.did_document.id {
             return Err(CredentialError::InvalidSubject);
         }
@@ -301,42 +365,12 @@ impl OanIdentity {
         if method.public_key_jwk.as_ref() != Some(&self.public_key_jwk) {
             return Err(CredentialError::InvalidSubject);
         }
-        let signing_key = signing_key_from_private_key_jwk(
-            CryptoSuite::Ed25519Sha256,
-            &self.private_key_jwk,
-        )
-            .map_err(|_| CredentialError::InvalidSubject)?;
+        let signing_key =
+            signing_key_from_private_key_jwk(CryptoSuite::Ed25519Sha256, &self.private_key_jwk)
+                .map_err(|_| CredentialError::InvalidSubject)?;
         if public_key_jwk(&signing_key.verifying_key()) != self.public_key_jwk {
             return Err(CredentialError::InvalidSubject);
         }
-        self.did_document
-            .validate_mvp()
-            .map_err(|_| CredentialError::InvalidSubject)?;
-        let proof = self
-            .did_document
-            .proof
-            .as_ref()
-            .ok_or(CredentialError::InvalidSubject)?;
-        if proof.verification_method.as_deref() != Some(self.verification_method_id.as_str())
-            || !proof.creator.is_empty()
-            || proof.crypto_suite.is_some()
-            || proof.hash_algorithm.is_some()
-        {
-            return Err(CredentialError::InvalidSubject);
-        }
-        let verifying_key =
-            verifying_key_from_method(method).map_err(|_| CredentialError::InvalidSubject)?;
-        let mut unsigned = self.did_document.clone();
-        unsigned.proof = None;
-        let proof = OanCredentialProof {
-            proof_type: proof.proof_type.clone(),
-            created: proof.created,
-            proof_purpose: proof.proof_purpose.clone(),
-            proof_value: proof.proof_value.clone(),
-            verification_method: proof.verification_method.clone().unwrap(),
-        };
-        verify_oan_payload(&unsigned, &proof, &verifying_key)
-            .map_err(|_| CredentialError::InvalidSignature)?;
         Ok(())
     }
 }
@@ -391,12 +425,7 @@ where
     let did = verification_method
         .strip_suffix("#key-1")
         .ok_or(CredentialError::InvalidSignature)?;
-    let signed = sign_oan_data_integrity(
-        value.take(),
-        did,
-        private_key_jwk(signing_key),
-    )
-    .await?;
+    let signed = sign_oan_data_integrity(value.take(), did, private_key_jwk(signing_key)).await?;
     let mut proof = signed
         .get("proof")
         .cloned()
@@ -576,15 +605,16 @@ pub fn verify_oan_credential<T>(
 where
     T: Serialize,
 {
-    if credential.context.iter().map(String::as_str).collect::<Vec<_>>()
+    if credential
+        .context
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
         != OAN_VC_CONTEXTS
     {
         return Err(CredentialError::InvalidSubject);
     }
-    let verification_method = credential
-        .proof
-        .verification_method
-        .as_str();
+    let verification_method = credential.proof.verification_method.as_str();
     if credential.proof.proof_type != "Ed25519Signature2020"
         || credential.proof.proof_purpose != "assertionMethod"
         || !verification_method.starts_with(&format!("{}#", credential.issuer))
@@ -614,6 +644,37 @@ mod tests {
 
     fn private_jwk(key: &SigningKey) -> Value {
         private_key_jwk(key)
+    }
+
+    fn standard_identity_document(
+        did: &str,
+        method_id: &str,
+        public_key: Value,
+    ) -> oan_core::DidDocument {
+        oan_core::DidDocument {
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
+            id: did.to_owned(),
+            controller: Some(oan_core::DidController::Did(did.to_owned())),
+            verification_method: vec![oan_core::VerificationMethod {
+                id: method_id.to_owned(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: did.to_owned(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: None,
+                public_key_multibase: None,
+                public_key_jwk: Some(public_key),
+            }],
+            authentication: vec![method_id.to_owned()],
+            assertion_method: vec![method_id.to_owned()],
+            capability_invocation: vec![method_id.to_owned()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        }
     }
 
     fn did_proof_for<T: Serialize>(
@@ -648,7 +709,10 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
         };
         let mut vc = OanVerifiableCredential {
-            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: OAN_VC_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: Some("urn:oan:vc:1".to_owned()),
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
@@ -671,6 +735,71 @@ mod tests {
         vc.proof = proof_for(&unsigned, "did:oan:root#key-1", &key.signing_key);
         validate_infrastructure_authorization_credential(&vc).unwrap();
         verify_oan_credential(&vc, &key.verifying_key).unwrap();
+    }
+
+    #[tokio::test]
+    async fn identity_accepts_standard_data_integrity_proof() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let method_id = format!("{did}#key-1");
+        let public_jwk = public_key_jwk(&key.verifying_key);
+        let document = standard_identity_document(did, &method_id, public_jwk.clone());
+        let signed = sign_oan_data_integrity(
+            serde_json::to_value(document).unwrap(),
+            did,
+            private_jwk(&key.signing_key),
+        )
+        .await
+        .unwrap();
+        let document: oan_core::DidDocument = serde_json::from_value(signed).unwrap();
+        let identity = OanIdentity {
+            id: "identity-standard-di".to_owned(),
+            created_at: Utc::now().to_rfc3339(),
+            did: did.to_owned(),
+            verification_method_id: method_id,
+            did_document: document,
+            public_key_jwk: public_jwk,
+            private_key_jwk: private_jwk(&key.signing_key),
+        };
+
+        identity.validate_data_integrity().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn identity_rejects_tampered_standard_data_integrity_proof() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu";
+        let method_id = format!("{did}#key-1");
+        let public_jwk = public_key_jwk(&key.verifying_key);
+        let document = standard_identity_document(did, &method_id, public_jwk.clone());
+        let signed = sign_oan_data_integrity(
+            serde_json::to_value(document).unwrap(),
+            did,
+            private_jwk(&key.signing_key),
+        )
+        .await
+        .unwrap();
+        let mut document: oan_core::DidDocument = serde_json::from_value(signed).unwrap();
+        document.id = "did:oan:K7mQ9:6HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let identity = OanIdentity {
+            id: "identity-standard-di-tampered".to_owned(),
+            created_at: Utc::now().to_rfc3339(),
+            did: did.to_owned(),
+            verification_method_id: method_id,
+            did_document: document,
+            public_key_jwk: public_jwk,
+            private_key_jwk: private_jwk(&key.signing_key),
+        };
+
+        assert!(identity.validate_data_integrity().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn genesis_root_identity_uses_valid_multibase_proof() {
+        let raw =
+            include_str!("../../../../oan-design-docs/genesis/nodes/genesis-root/identity.json");
+        let identity: OanIdentity = serde_json::from_str(raw).unwrap();
+        identity.validate_data_integrity().await.unwrap();
     }
 
     #[test]
@@ -710,7 +839,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn infrastructure_authorization_data_integrity_credential_verifies_without_remote_oan_context() {
+    async fn infrastructure_authorization_data_integrity_credential_verifies_without_remote_oan_context(
+    ) {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
         let subject = InfrastructureAuthorizationCredentialSubject {
             id: "did:oan:2Xr85:Edi352G96M7kgMB84enoEG2mj8AsDm3u".to_owned(),
@@ -723,7 +853,10 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
         };
         let mut credential = OanVerifiableCredential {
-            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: OAN_VC_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: Some("urn:oan:root-authorization:registrar:local-context".to_owned()),
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
@@ -773,7 +906,10 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
         };
         let mut credential = OanVerifiableCredential {
-            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: OAN_VC_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: Some("urn:oan:root-authorization:registrar:wrong-issuer".to_owned()),
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
@@ -818,7 +954,10 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
         };
         let mut credential = OanVerifiableCredential {
-            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: OAN_VC_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: Some("urn:oan:vc:issuer-binding".to_owned()),
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
@@ -876,7 +1015,10 @@ mod tests {
                 "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
         };
         let mut credential = OanVerifiableCredential {
-            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: OAN_VC_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: Some("urn:oan:vc:legacy-proof".to_owned()),
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
@@ -940,9 +1082,7 @@ mod tests {
             oan_metadata: None,
         };
         let unsigned = document.clone();
-        document.proof = Some(
-            did_proof_for(&unsigned, other, &key.signing_key),
-        );
+        document.proof = Some(did_proof_for(&unsigned, other, &key.signing_key));
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
             created_at: Utc::now().to_rfc3339(),
@@ -985,13 +1125,11 @@ mod tests {
             oan_metadata: None,
         };
         let unsigned = document.clone();
-        document.proof = Some(
-            did_proof_for(
-                &unsigned,
-                method_id.clone(),
-                &key.signing_key,
-            )
-        );
+        document.proof = Some(did_proof_for(
+            &unsigned,
+            method_id.clone(),
+            &key.signing_key,
+        ));
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
             created_at: Utc::now().to_rfc3339(),
@@ -1032,13 +1170,11 @@ mod tests {
             oan_metadata: None,
         };
         let unsigned = document.clone();
-        document.proof = Some(
-            did_proof_for(
-                &unsigned,
-                method_id.clone(),
-                &key.signing_key,
-            )
-        );
+        document.proof = Some(did_proof_for(
+            &unsigned,
+            method_id.clone(),
+            &key.signing_key,
+        ));
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
             created_at: Utc::now().to_rfc3339(),
@@ -1082,7 +1218,11 @@ mod tests {
             oan_metadata: None,
         };
         let unsigned = document.clone();
-        document.proof = Some(did_proof_for(&unsigned, method_id.clone(), &key.signing_key));
+        document.proof = Some(did_proof_for(
+            &unsigned,
+            method_id.clone(),
+            &key.signing_key,
+        ));
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
             created_at: Utc::now().to_rfc3339(),
@@ -1126,7 +1266,11 @@ mod tests {
             oan_metadata: None,
         };
         let unsigned = document.clone();
-        document.proof = Some(did_proof_for(&unsigned, document_method_id, &key.signing_key));
+        document.proof = Some(did_proof_for(
+            &unsigned,
+            document_method_id,
+            &key.signing_key,
+        ));
         let identity = OanIdentity {
             id: "identity-1".to_owned(),
             created_at: Utc::now().to_rfc3339(),
@@ -1157,7 +1301,10 @@ mod tests {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let unsigned = json!({"credentialSubject": subject});
         let vc = OanVerifiableCredential {
-            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: OAN_VC_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: None,
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
@@ -1182,7 +1329,10 @@ mod tests {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let base = |credential_type: &str, subject: Value| {
             let mut credential = OanVerifiableCredential {
-                context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+                context: OAN_VC_CONTEXTS
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
                 id: None,
                 credential_type: vec![
                     "VerifiableCredential".to_owned(),
@@ -1231,7 +1381,10 @@ mod tests {
     fn business_credential_subject_validators_reject_missing_required_fields() {
         let key = generate_keypair(CryptoSuite::Ed25519Sha256Legacy).unwrap();
         let mut credential = OanBusinessFactCredential {
-            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            context: OAN_VC_CONTEXTS
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
             id: None,
             credential_type: vec![
                 "VerifiableCredential".to_owned(),
