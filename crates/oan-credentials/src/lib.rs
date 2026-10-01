@@ -1055,6 +1055,94 @@ mod tests {
     }
 
     #[test]
+    fn identity_rejects_mismatched_did_document_id() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let document_did = "did:oan:K7mQ9:6HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let method_id = format!("{document_did}#key-1");
+        let jwk = public_key_jwk(&key.verifying_key);
+        let mut document = oan_core::DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: document_did.clone(),
+            controller: Some(oan_core::DidController::Did(document_did.clone())),
+            verification_method: vec![oan_core::VerificationMethod {
+                id: method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: document_did.clone(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: None,
+                public_key_multibase: None,
+                public_key_jwk: Some(jwk.clone()),
+            }],
+            authentication: vec![method_id.clone()],
+            assertion_method: vec![method_id.clone()],
+            capability_invocation: vec![method_id.clone()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let unsigned = document.clone();
+        document.proof = Some(did_proof_for(&unsigned, method_id.clone(), &key.signing_key));
+        let identity = OanIdentity {
+            id: "identity-1".to_owned(),
+            created_at: Utc::now().to_rfc3339(),
+            did,
+            verification_method_id: method_id,
+            did_document: document,
+            public_key_jwk: jwk,
+            private_key_jwk: private_jwk(&key.signing_key),
+        };
+        assert!(matches!(
+            identity.validate(),
+            Err(CredentialError::InvalidSubject)
+        ));
+    }
+
+    #[test]
+    fn identity_rejects_unbound_verification_method_id() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let did = "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu".to_owned();
+        let document_method_id = format!("{did}#key-1");
+        let selected_method_id = format!("{did}#key-2");
+        let jwk = public_key_jwk(&key.verifying_key);
+        let mut document = oan_core::DidDocument {
+            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            id: did.clone(),
+            controller: Some(oan_core::DidController::Did(did.clone())),
+            verification_method: vec![oan_core::VerificationMethod {
+                id: document_method_id.clone(),
+                method_type: "Ed25519VerificationKey2020".to_owned(),
+                controller: did.clone(),
+                crypto_suite: Some(CryptoSuite::Ed25519Sha256),
+                public_key_format: None,
+                public_key_multibase: None,
+                public_key_jwk: Some(jwk.clone()),
+            }],
+            authentication: vec![document_method_id.clone()],
+            assertion_method: vec![document_method_id.clone()],
+            capability_invocation: vec![document_method_id.clone()],
+            service: vec![],
+            proof: None,
+            oan_metadata: None,
+        };
+        let unsigned = document.clone();
+        document.proof = Some(did_proof_for(&unsigned, document_method_id, &key.signing_key));
+        let identity = OanIdentity {
+            id: "identity-1".to_owned(),
+            created_at: Utc::now().to_rfc3339(),
+            did,
+            verification_method_id: selected_method_id,
+            did_document: document,
+            public_key_jwk: jwk,
+            private_key_jwk: private_jwk(&key.signing_key),
+        };
+        assert!(matches!(
+            identity.validate(),
+            Err(CredentialError::InvalidSubject)
+        ));
+    }
+
+    #[test]
     fn legacy_type_is_rejected() {
         let subject = InfrastructureAuthorizationCredentialSubject {
             id: "did:oan:2Xr85:Edi352G96M7kgMB84enoEG2mj8AsDm3u".to_owned(),
