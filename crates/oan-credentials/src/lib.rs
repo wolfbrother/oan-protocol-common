@@ -10,7 +10,8 @@ use oan_core::{
     CryptoSuite, OanCredentialProof, ResourceType, SubjectType,
 };
 use oan_crypto::{
-    hash_json_with_suite, public_key_jwk, signature_input, signing_key_from_private_key_jwk,
+    hash_json_with_suite, private_key_jwk, public_key_jwk, signature_input, sign_oan_data_integrity,
+    signing_key_from_private_key_jwk,
     verify_oan_payload, verifying_key_from_method, CryptoError,
     SigningKey, VerifyingKey,
 };
@@ -368,6 +369,42 @@ where
         proof_value: format!("z{}", bs58::encode(signature).into_string()),
         verification_method,
     })
+}
+
+/// Sign a VC with the JSON-LD Data Integrity Ed25519Signature2020 suite.
+///
+/// This is the only signing entry point for externally exchanged VCs. The
+/// synchronous `sign_credential` helper remains for internal request proof
+/// compatibility and must not be used for DID Documents or VCs.
+pub async fn sign_credential_data_integrity<T>(
+    credential_without_proof: &T,
+    verification_method: String,
+    signing_key: &SigningKey,
+) -> Result<CredentialProof, CredentialError>
+where
+    T: Serialize,
+{
+    let mut value = serde_json::to_value(credential_without_proof)?;
+    if let Some(object) = value.as_object_mut() {
+        object.remove("proof");
+    }
+    let did = verification_method
+        .strip_suffix("#key-1")
+        .ok_or(CredentialError::InvalidSignature)?;
+    let signed = sign_oan_data_integrity(
+        value.take(),
+        did,
+        private_key_jwk(signing_key),
+    )
+    .await?;
+    let mut proof = signed
+        .get("proof")
+        .cloned()
+        .ok_or(CredentialError::MissingProof)?;
+    if let Some(object) = proof.as_object_mut() {
+        object.remove("@context");
+    }
+    serde_json::from_value(proof).map_err(CredentialError::Serialization)
 }
 
 pub fn verify_signed_payload<T>(

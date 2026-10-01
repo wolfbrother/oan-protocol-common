@@ -22,7 +22,10 @@ use sm2::dsa::{
     Signature as Sm2Signature, SigningKey as Sm2SigningKey, VerifyingKey as Sm2VerifyingKey,
 };
 use sm3::{Digest as Sm3Digest, Sm3};
-use ssi_claims::data_integrity::{AnyDataIntegrity, AnySuite, CryptographicSuite, ProofOptions};
+use ssi_claims::data_integrity::{
+    AnyDataIntegrity, AnySuite, CryptographicSuite, ProofOptions,
+};
+use ssi_claims_core::SignatureEnvironment;
 use ssi_claims::VerificationParameters;
 use ssi_data_integrity::DataIntegrityDocument;
 use ssi_jwk::JWK;
@@ -127,12 +130,24 @@ pub async fn sign_oan_data_integrity(
     methods.insert(method_id.clone(), key.into());
     let input: DataIntegrityDocument = serde_json::from_value(document)
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let context_loader = ssi_json_ld::ContextLoader::empty()
+        .with_static_loader()
+        .with_context_map_from(std::collections::HashMap::from([(
+            "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+            r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata"}}"#.to_owned(),
+        )]))
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
     let signed: AnyDataIntegrity = AnySuite::Ed25519Signature2020
-        .sign(
+        .sign_with(
+            SignatureEnvironment {
+                json_ld_loader: context_loader,
+                eip712_loader: (),
+            },
             input,
             &methods,
             SingleSecretSigner::new(jwk).into_local(),
             ProofOptions::from_method(method_id.into()),
+            Default::default(),
         )
         .await
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
@@ -196,8 +211,20 @@ pub async fn verify_oan_data_integrity(
     methods.insert(method_id, key.into());
     let secured: AnyDataIntegrity = serde_json::from_value(document)
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let context_loader = ssi_json_ld::ContextLoader::empty()
+        .with_static_loader()
+        .with_context_map_from(std::collections::HashMap::from([(
+            "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+            r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata"}}"#.to_owned(),
+        )]))
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
     secured
-        .verify(VerificationParameters::from_resolver(methods))
+        .verify(VerificationParameters {
+            json_ld_loader: context_loader,
+            eip712_types_loader: (),
+            resolver: methods,
+            date_time: None,
+        })
         .await
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
@@ -671,6 +698,7 @@ pub fn private_key_jwk(signing_key: &SigningKey) -> serde_json::Value {
         SigningKey::Ed25519 { key, .. } => serde_json::json!({
             "kty": "OKP",
             "crv": "Ed25519",
+            "x": URL_SAFE_NO_PAD.encode(key.verifying_key().as_bytes()),
             "d": URL_SAFE_NO_PAD.encode(key.to_bytes()),
         }),
         SigningKey::Sm2 { key, .. } => serde_json::json!({

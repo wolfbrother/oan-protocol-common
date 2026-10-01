@@ -739,11 +739,21 @@ pub struct ImplementationLink {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CredentialIssuer {
+    Did(String),
+    Dids(Vec<String>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CredentialRequirement {
+    pub id: String,
+    pub purpose: String,
     #[serde(rename = "credentialType")]
     pub credential_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub issuer: Option<String>,
+    pub issuer: Option<CredentialIssuer>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<serde_json::Value>,
     #[serde(rename = "presentationMode", skip_serializing_if = "Option::is_none")]
@@ -753,6 +763,7 @@ pub struct CredentialRequirement {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PackageInfo {
     #[serde(rename = "manifestUrl", skip_serializing_if = "Option::is_none")]
     pub manifest_url: Option<String>,
@@ -764,8 +775,6 @@ pub struct PackageInfo {
     pub metadata_hash: Option<String>,
     #[serde(rename = "rootProofRef", skip_serializing_if = "Option::is_none")]
     pub root_proof_ref: Option<String>,
-    #[serde(rename = "bulletinRef", skip_serializing_if = "Option::is_none")]
-    pub bulletin_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     #[serde(rename = "versionScheme", skip_serializing_if = "Option::is_none")]
@@ -1827,7 +1836,6 @@ mod tests {
                     package_hash: Some("sha256:pkg".to_owned()),
                     metadata_hash: Some("sha256:meta".to_owned()),
                     root_proof_ref: Some("https://root.example.org/proofs/skill.json".to_owned()),
-                    bulletin_ref: None,
                     version: Some("1.0.0".to_owned()),
                     version_scheme: Some("semver".to_owned()),
                     previous_version: None,
