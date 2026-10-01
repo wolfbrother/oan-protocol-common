@@ -12,7 +12,7 @@ use oan_core::{
 use oan_crypto::{
     hash_json_with_suite, private_key_jwk, public_key_jwk, signature_input, sign_oan_data_integrity,
     signing_key_from_private_key_jwk,
-    verify_oan_payload, verifying_key_from_method, CryptoError,
+    verify_oan_data_integrity, verify_oan_payload, verifying_key_from_method, CryptoError,
     SigningKey, VerifyingKey,
 };
 use ed25519_dalek::Signer;
@@ -407,6 +407,18 @@ where
     serde_json::from_value(proof).map_err(CredentialError::Serialization)
 }
 
+pub async fn verify_credential_data_integrity<T>(
+    credential: &T,
+    issuer_public_key_jwk: Value,
+) -> Result<(), CredentialError>
+where
+    T: Serialize,
+{
+    let value = serde_json::to_value(credential)?;
+    verify_oan_data_integrity(value, issuer_public_key_jwk).await?;
+    Ok(())
+}
+
 pub fn verify_signed_payload<T>(
     payload_without_proof: &T,
     proof: Option<&CredentialProof>,
@@ -683,6 +695,56 @@ mod tests {
         ] {
             assert!(!subject_json.get(field).is_some() && !status_json.get(field).is_some());
         }
+    }
+
+    #[tokio::test]
+    async fn infrastructure_authorization_data_integrity_credential_verifies_without_remote_oan_context() {
+        let key = generate_keypair(CryptoSuite::Ed25519Sha256).unwrap();
+        let subject = InfrastructureAuthorizationCredentialSubject {
+            id: "did:oan:2Xr85:Edi352G96M7kgMB84enoEG2mj8AsDm3u".to_owned(),
+            role: "registrar".to_owned(),
+            subject_type: "infrastructure_node".to_owned(),
+            resource_type: "registrar_node".to_owned(),
+            endpoint: Some("https://registrar.example".to_owned()),
+            authorized_domains: vec!["technology".to_owned()],
+            did_document_hash:
+                "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        };
+        let mut credential = OanVerifiableCredential {
+            context: OAN_VC_CONTEXTS.iter().map(|value| (*value).to_owned()).collect(),
+            id: Some("urn:oan:root-authorization:registrar:local-context".to_owned()),
+            credential_type: vec![
+                "VerifiableCredential".to_owned(),
+                VC_INFRASTRUCTURE_AUTHORIZATION.to_owned(),
+            ],
+            issuer: "did:oan:root".to_owned(),
+            issuance_date: Utc::now(),
+            expiration_date: None,
+            credential_subject: subject,
+            credential_status: None,
+            credential_schema: None,
+            proof: proof_for(&json!({}), "did:oan:root#key-1", &key.signing_key),
+        };
+        let mut unsigned = serde_json::to_value(&credential).unwrap();
+        unsigned.as_object_mut().unwrap().remove("proof");
+        credential.proof = sign_credential_data_integrity(
+            &unsigned,
+            "did:oan:root#key-1".to_owned(),
+            &key.signing_key,
+        )
+        .await
+        .unwrap();
+
+        verify_credential_data_integrity(&credential, public_key_jwk(&key.verifying_key))
+            .await
+            .unwrap();
+
+        credential.credential_subject.authorized_domains = vec!["finance".to_owned()];
+        assert!(
+            verify_credential_data_integrity(&credential, public_key_jwk(&key.verifying_key))
+                .await
+                .is_err()
+        );
     }
 
     #[test]

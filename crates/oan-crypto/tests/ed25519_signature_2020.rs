@@ -138,10 +138,9 @@ async fn shared_oan_adapter_signs_and_verifies() {
         "issuer": "did:example:issuer",
         "credentialSubject": {"id": "did:example:subject"}
     });
-    let signed =
-        sign_oan_data_integrity(document, "did:example:issuer", private_key.clone())
-            .await
-            .unwrap();
+    let signed = sign_oan_data_integrity(document, "did:example:issuer", private_key.clone())
+        .await
+        .unwrap();
     assert!(signed["proof"]["proofValue"]
         .as_str()
         .unwrap()
@@ -159,6 +158,67 @@ async fn shared_oan_adapter_signs_and_verifies() {
     )
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn oan_adapter_uses_local_oan_context_without_remote_resolution() {
+    let signing_key = SigningKey::from_bytes(&[9u8; 32]);
+    let private_key = json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            signing_key.verifying_key().as_bytes()
+        ),
+        "d": base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            signing_key.to_bytes()
+        )
+    });
+    let public_key = json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": private_key["x"]
+    });
+    let document = json!({
+        "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://openagenet.xyz/did-oan-specs/v1",
+            "https://w3id.org/security/suites/ed25519-2020/v1"
+        ],
+        "id": "urn:oan:root-authorization:registrar:local-context-test",
+        "type": [
+            "VerifiableCredential",
+            "OANInfrastructureAuthorizationCredential"
+        ],
+        "issuer": "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo",
+        "issuanceDate": "2026-01-01T00:00:00Z",
+        "credentialSubject": {
+            "id": "did:oan:2LmNo:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+            "role": "registrar",
+            "subjectType": "infrastructure_node",
+            "resourceType": "registrar_node",
+            "authorizedDomains": ["*"],
+            "didDocumentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+    });
+
+    let signed = sign_oan_data_integrity(
+        document,
+        "did:oan:P9aBc:2LmNo3PqRsTuVwXyZaBcDeFgHiJkLmNo",
+        private_key,
+    )
+    .await
+    .unwrap();
+    verify_oan_data_integrity(signed.clone(), public_key.clone())
+        .await
+        .unwrap();
+
+    let mut tampered = signed;
+    tampered["credentialSubject"]["authorizedDomains"] = json!(["finance"]);
+    assert!(verify_oan_data_integrity(tampered, public_key)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -188,10 +248,9 @@ async fn oan_adapter_rejects_wrong_method_and_key_algorithm() {
         "issuer": "did:example:issuer",
         "credentialSubject": {"id": "did:example:subject"}
     });
-    let signed =
-        sign_oan_data_integrity(document, "did:example:issuer", private_key.clone())
-            .await
-            .unwrap();
+    let signed = sign_oan_data_integrity(document, "did:example:issuer", private_key.clone())
+        .await
+        .unwrap();
     let mut wrong_method = signed.clone();
     wrong_method["proof"]["verificationMethod"] =
         serde_json::Value::String("did:example:issuer#key-2".to_owned());

@@ -22,17 +22,17 @@ use sm2::dsa::{
     Signature as Sm2Signature, SigningKey as Sm2SigningKey, VerifyingKey as Sm2VerifyingKey,
 };
 use sm3::{Digest as Sm3Digest, Sm3};
-use ssi_claims::data_integrity::{
-    AnyDataIntegrity, AnySuite, CryptographicSuite, ProofOptions,
-};
-use ssi_claims_core::SignatureEnvironment;
+use ssi_claims::data_integrity::{AnyDataIntegrity, AnySuite, CryptographicSuite, ProofOptions};
 use ssi_claims::VerificationParameters;
+use ssi_claims_core::SignatureEnvironment;
 use ssi_data_integrity::DataIntegrityDocument;
 use ssi_jwk::JWK;
 use ssi_verification_methods::{AnyMethod, Ed25519VerificationKey2020, SingleSecretSigner};
 use thiserror::Error;
 
 const DEFAULT_SM2_DISTINGUISHED_ID: &str = "1234567812345678";
+const OAN_CONTEXT_URL: &str = "https://openagenet.xyz/did-oan-specs/v1";
+const OAN_CONTEXT_DOCUMENT: &str = r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata"}}"#;
 
 #[derive(Debug, Error)]
 pub enum CryptoError {
@@ -60,8 +60,8 @@ pub enum CryptoError {
 
 /// Sign a JSON-LD document with the standard Ed25519Signature2020 suite.
 ///
-/// This is the strict Profile v2 path. It deliberately does not use the
-/// legacy OAN canonical-JSON/Base64URL path.
+/// This is the strict OAN Data Integrity path. It deliberately does not use
+/// the legacy OAN canonical-JSON/Base64URL path.
 pub async fn sign_oan_data_integrity(
     document: serde_json::Value,
     did: &str,
@@ -130,13 +130,7 @@ pub async fn sign_oan_data_integrity(
     methods.insert(method_id.clone(), key.into());
     let input: DataIntegrityDocument = serde_json::from_value(document)
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
-    let context_loader = ssi_json_ld::ContextLoader::empty()
-        .with_static_loader()
-        .with_context_map_from(std::collections::HashMap::from([(
-            "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
-            r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata"}}"#.to_owned(),
-        )]))
-        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let context_loader = oan_data_integrity_context_loader()?;
     let signed: AnyDataIntegrity = AnySuite::Ed25519Signature2020
         .sign_with(
             SignatureEnvironment {
@@ -211,13 +205,7 @@ pub async fn verify_oan_data_integrity(
     methods.insert(method_id, key.into());
     let secured: AnyDataIntegrity = serde_json::from_value(document)
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
-    let context_loader = ssi_json_ld::ContextLoader::empty()
-        .with_static_loader()
-        .with_context_map_from(std::collections::HashMap::from([(
-            "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
-            r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata"}}"#.to_owned(),
-        )]))
-        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
+    let context_loader = oan_data_integrity_context_loader()?;
     secured
         .verify(VerificationParameters {
             json_ld_loader: context_loader,
@@ -229,6 +217,16 @@ pub async fn verify_oan_data_integrity(
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
     Ok(())
+}
+
+fn oan_data_integrity_context_loader() -> Result<ssi_json_ld::ContextLoader, CryptoError> {
+    ssi_json_ld::ContextLoader::empty()
+        .with_static_loader()
+        .with_context_map_from(std::collections::HashMap::from([(
+            OAN_CONTEXT_URL.to_owned(),
+            OAN_CONTEXT_DOCUMENT.to_owned(),
+        )]))
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))
 }
 
 #[derive(Clone, Debug)]
@@ -518,7 +516,11 @@ pub fn verify_did_document_proof(document: &DidDocument) -> Result<(), CryptoErr
     const OAN_CONTEXT: &str = "https://openagenet.xyz/did-oan-specs/v1";
     const ED25519_CONTEXT: &str = "https://w3id.org/security/suites/ed25519-2020/v1";
     if document.context
-        != [DID_CONTEXT.to_owned(), OAN_CONTEXT.to_owned(), ED25519_CONTEXT.to_owned()]
+        != [
+            DID_CONTEXT.to_owned(),
+            OAN_CONTEXT.to_owned(),
+            ED25519_CONTEXT.to_owned(),
+        ]
     {
         return Err(CryptoError::InvalidProof);
     }
@@ -767,10 +769,7 @@ pub fn verify_oan_payload<T: Serialize>(
     let input = signature_input(CryptoSuite::Ed25519Sha256, payload)?;
     match verifying_key {
         VerifyingKey::Ed25519 { key, .. } => key
-            .verify(
-                &input,
-                &Ed25519Signature::from_bytes(&signature),
-            )
+            .verify(&input, &Ed25519Signature::from_bytes(&signature))
             .map_err(|_| CryptoError::VerificationFailed),
         VerifyingKey::Sm2 { .. } => Err(CryptoError::UnsupportedCryptoSuite),
     }
