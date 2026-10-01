@@ -12,7 +12,8 @@ use ed25519_dalek::{
 };
 use iref::{IriBuf, UriBuf};
 use oan_core::{
-    CryptoSuite, DataIntegrityProof, DidDocument, OanCredentialProof, VerificationMethod,
+    CryptoSuite, DataIntegrityProof, DidController, DidDocument, OanCredentialProof,
+    VerificationMethod,
 };
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
@@ -612,7 +613,21 @@ pub fn verify_did_document_proof(document: &DidDocument) -> Result<(), CryptoErr
     let method = document
         .verification_method
         .iter()
-        .find(|method| method.id == method_id && method.controller == document.id)
+        .find(|method| {
+            if method.id != method_id {
+                return false;
+            }
+            match document.controller.as_ref() {
+                Some(DidController::Did(controller)) => {
+                    method.controller == document.id || method.controller == *controller
+                }
+                Some(DidController::Dids(controllers)) => {
+                    method.controller == document.id
+                        || controllers.iter().any(|controller| method.controller == *controller)
+                }
+                None => method.controller == document.id,
+            }
+        })
         .ok_or(CryptoError::InvalidProof)?;
     if method.method_type != "Ed25519VerificationKey2020" {
         return Err(CryptoError::InvalidProof);
@@ -626,7 +641,17 @@ pub fn verify_did_document_proof(document: &DidDocument) -> Result<(), CryptoErr
     {
         return Err(CryptoError::InvalidProof);
     }
-    verify_did_document_proof_standard_blocking(document)
+    match verify_did_document_proof_standard_blocking(document) {
+        Ok(()) => Ok(()),
+        Err(standard_error) => {
+            let verifying_key = verifying_key_from_method(method)?;
+            let mut unsigned = document.clone();
+            unsigned.proof = None;
+            let input = did_document_signature_input(&unsigned, CryptoSuite::Ed25519Sha256)?;
+            verify_bytes_multibase(&verifying_key, &input, &proof.proof_value)
+                .map_err(|_| standard_error)
+        }
+    }
 }
 
 pub fn sign_legacy_ed25519_bytes(signing_key: &Ed25519SigningKey, payload: &[u8]) -> String {
