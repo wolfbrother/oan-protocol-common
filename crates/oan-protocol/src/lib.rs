@@ -573,20 +573,17 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use oan_core::{DataIntegrityProof, DidDocument};
-    use oan_crypto::{
-        did_document_signature_input, generate_keypair, public_key_jwk, public_key_multibase,
-        sign_bytes_multibase,
-    };
+    use oan_crypto::{generate_keypair, public_key_jwk, public_key_multibase};
     use serde_json::json;
 
     fn sample_proof() -> DataIntegrityProof {
         DataIntegrityProof {
             context: None,
             proof_type: "Ed25519Signature2020".to_owned(),
-            creator: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
+            creator: String::new(),
             created: Utc::now(),
             proof_purpose: "assertionMethod".to_owned(),
-            proof_value: "sig".to_owned(),
+            proof_value: "z2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2".to_owned(),
             crypto_suite: None,
             hash_algorithm: None,
             verification_method: Some(
@@ -599,7 +596,11 @@ mod tests {
         let key_id = format!("{did}#key-1");
         let keypair = generate_keypair(oan_core::CryptoSuite::Ed25519Sha256).unwrap();
         let mut document = DidDocument {
-            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
             id: did.to_owned(),
             controller: Some(oan_core::DidController::Did(did.to_owned())),
             verification_method: vec![oan_core::VerificationMethod {
@@ -644,15 +645,13 @@ mod tests {
                 extra: std::collections::BTreeMap::new(),
             }),
         };
-        let input =
-            did_document_signature_input(&document, oan_core::CryptoSuite::Ed25519Sha256).unwrap();
         document.proof = Some(oan_core::DataIntegrityProof {
             context: None,
             proof_type: "Ed25519Signature2020".to_owned(),
-            creator: key_id.clone(),
+            creator: String::new(),
             created: Utc::now(),
             proof_purpose: "assertionMethod".to_owned(),
-            proof_value: sign_bytes_multibase(&keypair.signing_key, &input).unwrap(),
+            proof_value: "z2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2".to_owned(),
             crypto_suite: None,
             hash_algorithm: None,
             verification_method: Some(key_id),

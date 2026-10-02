@@ -165,6 +165,17 @@ pub async fn verify_oan_data_integrity(
         .and_then(|proof| proof.get("verificationMethod"))
         .and_then(|value| value.as_str())
         .ok_or(CryptoError::InvalidProof)?;
+    if document
+        .get("proof")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|proof| {
+            proof.contains_key("creator")
+                || proof.contains_key("cryptoSuite")
+                || proof.contains_key("hashAlgorithm")
+        })
+    {
+        return Err(CryptoError::InvalidProof);
+    }
     let method_id = IriBuf::new(method_id.to_owned())
         .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?;
     if !method_id.as_iri().to_string().ends_with("#key-1") {
@@ -207,18 +218,7 @@ pub async fn verify_oan_data_integrity(
     );
     let mut methods = std::collections::HashMap::<IriBuf, AnyMethod>::new();
     methods.insert(method_id, key.into());
-    // `creator` is retained by the OAN data model as a redundant alias of
-    // `verificationMethod`.  Ed25519Signature2020 does not define it as part
-    // of the proof configuration, so exclude it from the standard suite's
-    // verification input while still validating the OAN-level equality
-    // constraint in the typed DID-document validator.
     let mut standard_document = document;
-    if let Some(proof) = standard_document
-        .get_mut("proof")
-        .and_then(serde_json::Value::as_object_mut)
-    {
-        proof.remove("creator");
-    }
     let context_loader = oan_data_integrity_context_loader()?;
     let verify = |value: serde_json::Value| {
         let context_loader = context_loader.clone();

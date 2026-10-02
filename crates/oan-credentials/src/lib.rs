@@ -1056,7 +1056,11 @@ mod tests {
         let other = format!("{did}#key-2");
         let jwk = public_key_jwk(&key.verifying_key);
         let mut document = oan_core::DidDocument {
-            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
             id: did.clone(),
             controller: Some(oan_core::DidController::Did(did.clone())),
             verification_method: vec![
@@ -1110,7 +1114,11 @@ mod tests {
         let method_id = format!("{did}#key-1");
         let jwk = public_key_jwk(&key.verifying_key);
         let mut document = oan_core::DidDocument {
-            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
             id: did.clone(),
             controller: Some(oan_core::DidController::Did(did.clone())),
             verification_method: vec![oan_core::VerificationMethod {
@@ -1155,7 +1163,11 @@ mod tests {
         let method_id = format!("{did}#key-1");
         let jwk = public_key_jwk(&key.verifying_key);
         let mut document = oan_core::DidDocument {
-            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
             id: did.clone(),
             controller: Some(oan_core::DidController::Did(did.clone())),
             verification_method: vec![oan_core::VerificationMethod {
@@ -1203,7 +1215,11 @@ mod tests {
         let method_id = format!("{document_did}#key-1");
         let jwk = public_key_jwk(&key.verifying_key);
         let mut document = oan_core::DidDocument {
-            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
             id: document_did.clone(),
             controller: Some(oan_core::DidController::Did(document_did.clone())),
             verification_method: vec![oan_core::VerificationMethod {
@@ -1251,7 +1267,11 @@ mod tests {
         let selected_method_id = format!("{did}#key-2");
         let jwk = public_key_jwk(&key.verifying_key);
         let mut document = oan_core::DidDocument {
-            context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
+            context: vec![
+                "https://www.w3.org/ns/did/v1".to_owned(),
+                "https://openagenet.xyz/did-oan-specs/v1".to_owned(),
+                "https://w3id.org/security/suites/ed25519-2020/v1".to_owned(),
+            ],
             id: did.clone(),
             controller: Some(oan_core::DidController::Did(did.clone())),
             verification_method: vec![oan_core::VerificationMethod {

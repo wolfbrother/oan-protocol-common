@@ -1243,11 +1243,7 @@ impl DidDocument {
         if self.id.is_empty() {
             return Err(DidDocumentError::EmptyId);
         }
-        if !self
-            .context
-            .iter()
-            .any(|value| value == "https://www.w3.org/ns/did/v1")
-        {
+        if self.context.iter().map(String::as_str).collect::<Vec<_>>() != DID_OAN_CONTEXTS {
             return Err(DidDocumentError::MissingDidCoreContext);
         }
         if self.verification_method.is_empty() {
@@ -1398,7 +1394,9 @@ fn validate_proof(
         .as_deref()
         .ok_or(DidDocumentError::InvalidProof("verificationMethod"))?;
     let expected_method = format!("{}#key-1", document.id);
-    if proof.creator != verification_method
+    if !proof.creator.is_empty()
+        || proof.crypto_suite.is_some()
+        || proof.hash_algorithm.is_some()
         || proof.proof_type != "Ed25519Signature2020"
         || proof.proof_purpose != "assertionMethod"
         || verification_method != expected_method
@@ -1408,6 +1406,10 @@ fn validate_proof(
             .map_or(true, |signature: Vec<u8>| signature.len() != 64)
         || !document
             .assertion_method
+            .iter()
+            .any(|method| method == verification_method)
+        || !document
+            .authentication
             .iter()
             .any(|method| method == verification_method)
     {
@@ -1816,7 +1818,7 @@ mod tests {
             proof: Some(DataIntegrityProof {
                 context: None,
                 proof_type: "Ed25519Signature2020".to_owned(),
-                creator: key_id.clone(),
+                creator: String::new(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
                 proof_value: format!("z{}", bs58::encode([8u8; 64]).into_string()),
@@ -2142,6 +2144,21 @@ mod tests {
     }
 
     #[test]
+    fn oan_rejects_legacy_creator_even_when_it_matches_verification_method() {
+        let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
+        let method_id = document
+            .proof
+            .as_ref()
+            .and_then(|proof| proof.verification_method.clone())
+            .unwrap();
+        document.proof.as_mut().unwrap().creator = method_id;
+        assert_eq!(
+            document.validate_oan_resource().unwrap_err(),
+            DidDocumentError::InvalidProof("did:oan")
+        );
+    }
+
+    #[test]
     fn oan_rejects_proof_algorithm_mismatch() {
         let mut document = sample_oan_resource_document(ResourceType::Skill, SubjectType::Skill);
         document.proof.as_mut().unwrap().proof_value = "zinvalid".to_owned();
@@ -2219,7 +2236,6 @@ mod tests {
             document.authentication = vec![format!("{did}#key-1")];
             document.assertion_method = vec![format!("{did}#key-1")];
             if let Some(proof) = &mut document.proof {
-                proof.creator = format!("{did}#key-1");
                 proof.verification_method = Some(format!("{did}#key-1"));
             }
 
