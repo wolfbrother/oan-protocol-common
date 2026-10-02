@@ -292,13 +292,28 @@ pub async fn verify_did_document_proof_standard_value(
 pub fn verify_did_document_proof_standard_blocking(
     document: &DidDocument,
 ) -> Result<(), CryptoError> {
-    futures::executor::block_on(verify_did_document_proof_standard(document))
+    let document = document.clone();
+    std::thread::Builder::new()
+        .name("oan-did-document-proof-verifier".to_owned())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || futures::executor::block_on(verify_did_document_proof_standard(&document)))
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?
+        .join()
+        .map_err(|_| CryptoError::StandardDataIntegrity("verifier thread panicked".to_owned()))?
 }
 
 pub fn verify_did_document_proof_standard_value_blocking(
     document: serde_json::Value,
 ) -> Result<(), CryptoError> {
-    futures::executor::block_on(verify_did_document_proof_standard_value(document))
+    std::thread::Builder::new()
+        .name("oan-did-document-proof-verifier".to_owned())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            futures::executor::block_on(verify_did_document_proof_standard_value(document))
+        })
+        .map_err(|error| CryptoError::StandardDataIntegrity(error.to_string()))?
+        .join()
+        .map_err(|_| CryptoError::StandardDataIntegrity("verifier thread panicked".to_owned()))?
 }
 
 fn oan_data_integrity_context_loader() -> Result<ssi_json_ld::ContextLoader, CryptoError> {

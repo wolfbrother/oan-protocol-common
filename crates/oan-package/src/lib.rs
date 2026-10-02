@@ -116,6 +116,12 @@ pub struct ResourcePackage {
     pub resource_type: ResourceType,
     #[serde(rename = "didDocument")]
     pub did_document: DidDocument,
+    #[serde(
+        rename = "didDocumentRaw",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub did_document_raw: Option<serde_json::Value>,
     #[serde(rename = "didDocumentHash")]
     pub did_document_hash: String,
     #[serde(rename = "metadataHash")]
@@ -354,6 +360,7 @@ mod tests {
                     extra: Default::default(),
                 }),
             },
+            did_document_raw: None,
             did_document_hash: String::new(),
             metadata_hash: String::new(),
             package_hash: String::new(),
