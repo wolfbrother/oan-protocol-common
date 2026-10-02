@@ -2777,6 +2777,7 @@ version = "1.0.1"
 dependencies = [
  "chrono",
  "oan-core",
+ "oan-crypto",
  "oan-did-oan",
  "oan-package",
  "serde",

@@ -133,7 +133,11 @@ impl BulletinEvent {
     pub fn crypto_suite(&self) -> CryptoSuite {
         self.crypto_suite
             .clone()
-            .or_else(|| self.proof.as_ref().and_then(|proof| proof.crypto_suite()))
+            .or_else(|| {
+                self.proof
+                    .as_ref()
+                    .and_then(|proof| proof.crypto_suite.clone())
+            })
             .unwrap_or(CryptoSuite::Ed25519Sha256Legacy)
     }
 }
@@ -167,14 +171,25 @@ impl Bulletin {
             }
 
             if let Some(proof) = &event.proof {
-                verify_payload_with_proof(
-                    &serde_json::json!({ "eventHash": event.event_hash }),
-                    proof,
-                    root_key,
-                )
-                .map_err(|_| BulletinError::SignatureMismatch {
-                    sequence: event.core.sequence,
-                })?;
+                if proof.crypto_suite.is_none() && event.crypto_suite.is_none() {
+                    let input = signature_input(
+                        suite,
+                        &serde_json::json!({ "eventHash": event.event_hash }),
+                    )?;
+                    oan_crypto::verify_bytes_multibase(root_key, &input, &proof.proof_value)
+                        .map_err(|_| BulletinError::SignatureMismatch {
+                            sequence: event.core.sequence,
+                        })?;
+                } else {
+                    verify_payload_with_proof(
+                        &serde_json::json!({ "eventHash": event.event_hash }),
+                        proof,
+                        root_key,
+                    )
+                    .map_err(|_| BulletinError::SignatureMismatch {
+                        sequence: event.core.sequence,
+                    })?;
+                }
             } else {
                 let input =
                     signature_input(suite, &serde_json::json!({ "eventHash": event.event_hash }))?;

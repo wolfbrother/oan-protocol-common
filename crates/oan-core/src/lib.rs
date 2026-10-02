@@ -611,6 +611,8 @@ impl VerificationMethod {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataIntegrityProof {
+    #[serde(rename = "@context", skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
     #[serde(rename = "type")]
     pub proof_type: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -1396,7 +1398,7 @@ fn validate_proof(
         .as_deref()
         .ok_or(DidDocumentError::InvalidProof("verificationMethod"))?;
     let expected_method = format!("{}#key-1", document.id);
-    if !proof.creator.is_empty()
+    if proof.creator != verification_method
         || proof.proof_type != "Ed25519Signature2020"
         || proof.proof_purpose != "assertionMethod"
         || verification_method != expected_method
@@ -1812,8 +1814,9 @@ mod tests {
             capability_invocation: vec![format!("{did}#key-1")],
             service: vec![],
             proof: Some(DataIntegrityProof {
+                context: None,
                 proof_type: "Ed25519Signature2020".to_owned(),
-                creator: String::new(),
+                creator: key_id.clone(),
                 created: Utc::now(),
                 proof_purpose: "assertionMethod".to_owned(),
                 proof_value: format!("z{}", bs58::encode([8u8; 64]).into_string()),
@@ -2216,6 +2219,7 @@ mod tests {
             document.authentication = vec![format!("{did}#key-1")];
             document.assertion_method = vec![format!("{did}#key-1")];
             if let Some(proof) = &mut document.proof {
+                proof.creator = format!("{did}#key-1");
                 proof.verification_method = Some(format!("{did}#key-1"));
             }
 
@@ -2501,6 +2505,7 @@ mod tests {
     #[test]
     fn proof_prefers_explicit_crypto_suite() {
         let proof = DataIntegrityProof {
+            context: None,
             proof_type: "Ed25519Signature2020".to_owned(),
             creator: "did:oan:AGDM:test#key-1".to_owned(),
             created: Utc::now(),
@@ -2517,6 +2522,7 @@ mod tests {
     #[test]
     fn proof_infers_current_suite_for_standard_shape() {
         let proof = DataIntegrityProof {
+            context: None,
             proof_type: "Ed25519Signature2020".to_owned(),
             creator: "did:oan:AGDM:test#key-1".to_owned(),
             created: Utc::now(),

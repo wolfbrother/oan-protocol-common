@@ -325,7 +325,6 @@ impl ResourceRegistrationSubmission {
     }
 }
 
-
 fn validate_hash_reference(field_name: &str, value: &str, algorithm: &str) -> Result<(), String> {
     if value.trim().is_empty() {
         return Err(format!("empty_{field_name}"));
@@ -342,7 +341,11 @@ pub struct ResourceVerifyAndPublishRequest {
     #[serde(rename = "registrarDid")]
     pub registrar_did: String,
     pub submission: ResourceRegistrationSubmission,
-    #[serde(rename = "didDocumentRaw", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "didDocumentRaw",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub did_document_raw: Option<Value>,
     #[serde(rename = "upstreamAuth")]
     pub upstream_auth: SignedRequestEnvelope,
@@ -570,10 +573,15 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use oan_core::{DataIntegrityProof, DidDocument};
+    use oan_crypto::{
+        did_document_signature_input, generate_keypair, public_key_jwk, public_key_multibase,
+        sign_bytes_multibase,
+    };
     use serde_json::json;
 
     fn sample_proof() -> DataIntegrityProof {
         DataIntegrityProof {
+            context: None,
             proof_type: "Ed25519Signature2020".to_owned(),
             creator: "did:oan:P9aBc:7YpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz#key-1".to_owned(),
             created: Utc::now(),
@@ -589,7 +597,8 @@ mod tests {
 
     fn sample_valid_resource_did_document(did: &str) -> DidDocument {
         let key_id = format!("{did}#key-1");
-        DidDocument {
+        let keypair = generate_keypair(oan_core::CryptoSuite::Ed25519Sha256).unwrap();
+        let mut document = DidDocument {
             context: vec!["https://www.w3.org/ns/did/v1".to_owned()],
             id: did.to_owned(),
             controller: Some(oan_core::DidController::Did(did.to_owned())),
@@ -598,24 +607,15 @@ mod tests {
                 method_type: "Ed25519VerificationKey2020".to_owned(),
                 controller: did.to_owned(),
                 crypto_suite: Some(oan_core::CryptoSuite::Ed25519Sha256),
-                public_key_format: None,
-                public_key_multibase: Some("zExample".to_owned()),
-                public_key_jwk: None,
+                public_key_format: Some("multibase".to_owned()),
+                public_key_multibase: Some(public_key_multibase(&keypair.verifying_key)),
+                public_key_jwk: Some(public_key_jwk(&keypair.verifying_key)),
             }],
             authentication: vec![key_id.clone()],
             assertion_method: vec![key_id.clone()],
             capability_invocation: vec![key_id.clone()],
             service: vec![],
-            proof: Some(oan_core::DataIntegrityProof {
-                proof_type: "Ed25519Signature2020".to_owned(),
-                creator: String::new(),
-                created: Utc::now(),
-                proof_purpose: "assertionMethod".to_owned(),
-                proof_value: "z4HnYnN6MCvEhMhcjUKpVYCaqXyP714jVJXJVTJprdb9wdTGsY5dkRWPf2wXNJuRWA1XiMZFPizD9PGEM3ZV4vNYF".to_owned(),
-                crypto_suite: None,
-                hash_algorithm: None,
-                verification_method: Some(key_id),
-            }),
+            proof: None,
             oan_metadata: Some(oan_core::OanMetadata {
                 subject_type: oan_core::SubjectType::Skill,
                 resource_type: oan_core::ResourceType::Skill,
@@ -643,7 +643,21 @@ mod tests {
                 lifecycle_state: Some("active".to_owned()),
                 extra: std::collections::BTreeMap::new(),
             }),
-        }
+        };
+        let input =
+            did_document_signature_input(&document, oan_core::CryptoSuite::Ed25519Sha256).unwrap();
+        document.proof = Some(oan_core::DataIntegrityProof {
+            context: None,
+            proof_type: "Ed25519Signature2020".to_owned(),
+            creator: key_id.clone(),
+            created: Utc::now(),
+            proof_purpose: "assertionMethod".to_owned(),
+            proof_value: sign_bytes_multibase(&keypair.signing_key, &input).unwrap(),
+            crypto_suite: None,
+            hash_algorithm: None,
+            verification_method: Some(key_id),
+        });
+        document
     }
 
     fn sample_resource_submission() -> ResourceRegistrationSubmission {

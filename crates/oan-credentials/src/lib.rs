@@ -10,8 +10,9 @@ use ed25519_dalek::Signer;
 use oan_core::{CryptoSuite, OanCredentialProof, ResourceType, SubjectType};
 use oan_crypto::{
     hash_json_with_suite, private_key_jwk, public_key_jwk, sign_oan_data_integrity,
-    signature_input, signing_key_from_private_key_jwk, verify_oan_data_integrity,
-    verify_oan_payload, verifying_key_from_method, CryptoError, SigningKey, VerifyingKey,
+    signature_input, signing_key_from_private_key_jwk, verify_did_document_proof,
+    verify_oan_data_integrity, verify_oan_payload, verifying_key_from_method, CryptoError,
+    SigningKey, VerifyingKey,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -249,6 +250,9 @@ impl OanIdentity {
         self.did_document
             .validate_mvp()
             .map_err(|_| CredentialError::InvalidSubject)?;
+        if verify_did_document_proof(&self.did_document).is_ok() {
+            return Ok(());
+        }
         let verified = verify_oan_data_integrity(
             serde_json::to_value(&self.did_document)?,
             self.public_key_jwk.clone(),
@@ -684,6 +688,7 @@ mod tests {
     ) -> oan_core::DataIntegrityProof {
         let proof = sign_credential(payload, key_id.clone(), key_id, key).unwrap();
         oan_core::DataIntegrityProof {
+            context: None,
             proof_type: proof.proof_type,
             creator: String::new(),
             created: proof.created,
@@ -834,7 +839,7 @@ mod tests {
             "expectedGovernanceState",
             "sequence",
         ] {
-            assert!(!subject_json.get(field).is_some() && !status_json.get(field).is_some());
+            assert!(subject_json.get(field).is_none() && status_json.get(field).is_none());
         }
     }
 
