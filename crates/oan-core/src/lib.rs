@@ -1476,7 +1476,11 @@ fn validate_external_identifiers(values: &[ExternalIdentifier]) -> Result<(), Di
         {
             return Err(DidDocumentError::InvalidExternalIdentifier("id"));
         }
-        if !ids.insert(&value.id) {
+        let endpoint_key = value
+            .resolution_service_endpoint
+            .as_deref()
+            .unwrap_or_default();
+        if !ids.insert((endpoint_key, value.id.as_str())) {
             return Err(DidDocumentError::InvalidExternalIdentifier("duplicate"));
         }
         if let Some(endpoint) = &value.resolution_service_endpoint {
@@ -1974,7 +1978,7 @@ mod tests {
     #[test]
     fn external_identifier_limits_and_safety_are_enforced() {
         let mut values = vec![ExternalIdentifier {
-            id: "urn:example:one".to_owned(),
+            id: "devil109/n8n-workflows".to_owned(),
             resolution_service_endpoint: Some("https://example.org/resolve".to_owned()),
         }];
         assert!(validate_external_identifiers(&values).is_ok());
@@ -2006,18 +2010,29 @@ mod tests {
 
         let duplicate = vec![
             ExternalIdentifier {
-                id: "urn:example:dup".to_owned(),
-                resolution_service_endpoint: None,
+                id: "6747420043".to_owned(),
+                resolution_service_endpoint: Some("https://apps.example.org".to_owned()),
             },
             ExternalIdentifier {
-                id: "urn:example:dup".to_owned(),
-                resolution_service_endpoint: None,
+                id: "6747420043".to_owned(),
+                resolution_service_endpoint: Some("https://apps.example.org".to_owned()),
             },
         ];
         assert_eq!(
             validate_external_identifiers(&duplicate).unwrap_err(),
             DidDocumentError::InvalidExternalIdentifier("duplicate")
         );
+        let same_native_id_in_distinct_namespaces = vec![
+            ExternalIdentifier {
+                id: "6747420043".to_owned(),
+                resolution_service_endpoint: Some("https://apps.example.org".to_owned()),
+            },
+            ExternalIdentifier {
+                id: "6747420043".to_owned(),
+                resolution_service_endpoint: Some("https://other.example.org".to_owned()),
+            },
+        ];
+        assert!(validate_external_identifiers(&same_native_id_in_distinct_namespaces).is_ok());
 
         let oversized = vec![
             ExternalIdentifier {

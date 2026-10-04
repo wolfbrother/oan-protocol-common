@@ -222,6 +222,100 @@ async fn oan_adapter_uses_local_oan_context_without_remote_resolution() {
 }
 
 #[tokio::test]
+async fn oan_external_identifier_native_ids_are_signable_and_verifiable() {
+    let signing_key = SigningKey::from_bytes(&[11u8; 32]);
+    let private_key = json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            signing_key.verifying_key().as_bytes()
+        ),
+        "d": base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            signing_key.to_bytes()
+        )
+    });
+    for native_id in ["devil109/n8n-workflows", "6747420043"] {
+        let document = json!({
+            "@context": [
+                "https://www.w3.org/ns/did/v1",
+                "https://openagenet.xyz/did-oan-specs/v1",
+                "https://w3id.org/security/suites/ed25519-2020/v1"
+            ],
+            "id": "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu",
+            "verificationMethod": [{
+                "id": "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu#key-1",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu",
+                "publicKeyJwk": private_key
+            }],
+            "authentication": [
+                "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu#key-1"
+            ],
+            "assertionMethod": [
+                "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu#key-1"
+            ],
+            "oanMetadata": {
+                "subjectType": "skill",
+                "resourceType": "skill",
+                "externalIdentifiers": [{
+                    "id": native_id,
+                    "resolutionServiceEndpoint": "https://example.org/resolve"
+                }]
+            }
+        });
+        let signed = sign_oan_data_integrity(
+            document,
+            "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu",
+            private_key.clone(),
+        )
+        .await
+        .unwrap();
+        verify_oan_data_integrity(
+            signed,
+            json!({
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": private_key["x"]
+            }),
+        )
+        .await
+        .unwrap();
+        let credential = json!({
+            "@context": [
+                "https://www.w3.org/2018/credentials/v1",
+                "https://openagenet.xyz/did-oan-specs/v1",
+                "https://w3id.org/security/suites/ed25519-2020/v1"
+            ],
+            "type": ["VerifiableCredential", "OANResourceRegistrationCredential"],
+            "issuer": "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu",
+            "credentialSubject": {
+                "id": "did:oan:K7mQ9:DYpQm9Kx2VnRb6Ts3WfHa4Cd5Ej8LgNz",
+                "externalIdentifiers": [{ "id": native_id }]
+            }
+        });
+        let signed_credential = sign_oan_data_integrity(
+            credential,
+            "did:oan:K7mQ9:5HkPq7Vm3RdT9Ya2WcX8Ns4Bf6GjLeZu",
+            private_key.clone(),
+        )
+        .await
+        .unwrap();
+        verify_oan_data_integrity(
+            signed_credential,
+            json!({
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": private_key["x"]
+            }),
+        )
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
 async fn oan_adapter_verifies_full_did_document_context_set() {
     let signing_key = SigningKey::from_bytes(&[11u8; 32]);
     let private_key = json!({

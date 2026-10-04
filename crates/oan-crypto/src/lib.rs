@@ -35,7 +35,7 @@ const DEFAULT_SM2_DISTINGUISHED_ID: &str = "1234567812345678";
 const DID_CORE_CONTEXT_URL: &str = "https://www.w3.org/ns/did/v1";
 const DID_CORE_CONTEXT_DOCUMENT: &str = r#"{"@context":{"id":"@id","type":"@type","controller":"https://w3id.org/security#controller","verificationMethod":"https://w3id.org/security#verificationMethod","authentication":"https://w3id.org/security#authenticationMethod","assertionMethod":"https://w3id.org/security#assertionMethod","capabilityInvocation":"https://w3id.org/security#capabilityInvocationMethod","service":"https://www.w3.org/ns/did#service","serviceEndpoint":"https://www.w3.org/ns/did#serviceEndpoint"}}"#;
 const OAN_CONTEXT_URL: &str = "https://openagenet.xyz/did-oan-specs/v1";
-const OAN_CONTEXT_DOCUMENT: &str = r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata"}}"#;
+const OAN_CONTEXT_DOCUMENT: &str = r#"{"@context":{"@vocab":"https://openagenet.xyz/did-oan-specs#","oanMetadata":"https://openagenet.xyz/did-oan-specs#oanMetadata","externalIdentifiers":{"@id":"https://openagenet.xyz/did-oan-specs#externalIdentifiers","@context":{"id":{"@id":"https://openagenet.xyz/did-oan-specs#externalIdentifierId","@type":"http://www.w3.org/2001/XMLSchema#string"},"resolutionServiceEndpoint":{"@id":"https://openagenet.xyz/did-oan-specs#resolutionServiceEndpoint","@type":"http://www.w3.org/2001/XMLSchema#string"}}}}}"#;
 const ED25519_CONTEXT_URL: &str = "https://w3id.org/security/suites/ed25519-2020/v1";
 const VC_CONTEXT_URL: &str = "https://www.w3.org/2018/credentials/v1";
 
