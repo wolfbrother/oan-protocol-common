@@ -1126,7 +1126,7 @@ impl PostgresJsonStore {
               AND (updated_at > $2::timestamptz
                    OR (updated_at = $2::timestamptz AND record_key > $3))
             ORDER BY updated_at, record_key
-            LIMIT $4
+            LIMIT $4::bigint
             "#
         } else {
             r#"
@@ -1134,7 +1134,7 @@ impl PostgresJsonStore {
             FROM json_records
             WHERE namespace = $1
             ORDER BY updated_at, record_key
-            LIMIT $2
+            LIMIT $2::bigint
             "#
         };
         let mut query = sqlx::query_as::<_, (String, String, String)>(sql).bind(namespace);
