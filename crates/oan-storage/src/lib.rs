@@ -1141,7 +1141,6 @@ impl PostgresJsonStore {
         if let Some(cursor) = cursor {
             query = query
                 .bind(&cursor.updated_at)
-                .bind(&cursor.updated_at)
                 .bind(&cursor.record_key);
         }
         let mut stream = query.bind(i64::from(limit)).fetch(&self.pool);
